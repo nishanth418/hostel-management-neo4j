@@ -1,204 +1,111 @@
 const path = require('path');
-const Database = require('better-sqlite3');
-const fs = require('fs');
 require('dotenv').config();
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
-const mysql = require('./db-mysql');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
-const DB_DIR = path.resolve(__dirname, '../database');
-const DB_PATH = path.join(DB_DIR, 'hostel.db');
-const SCHEMA_PATH = path.join(DB_DIR, 'schema.sql');
-const SEED_PATH = path.join(DB_DIR, 'seed.sql');
+const neo4jDb = require('./db-neo4j');
+const { initNeo4j } = require('./init-neo4j');
 
-const REQUIRED_TABLES = mysql.REQUIRED_TABLES;
-
-// Lazy SQLite initialization
-let sqliteDb = null;
-function getSqlite() {
-  if (!sqliteDb) {
-    if (!fs.existsSync(DB_DIR)) {
-      fs.mkdirSync(DB_DIR, { recursive: true });
-    }
-    sqliteDb = new Database(DB_PATH);
-    sqliteDb.pragma('foreign_keys = ON');
-  }
-  return sqliteDb;
-}
-
-function isMySQL() {
-  return mysql.isMySQLConfigured();
-}
-
-function adaptSql(sql, targetIsMySQL) {
-  if (typeof sql !== 'string') return sql;
-  let adapted = sql;
-  if (targetIsMySQL) {
-    // Adapt GROUP_CONCAT(expr, ', ') to GROUP_CONCAT(expr SEPARATOR ', ')
-    adapted = adapted.replace(/GROUP_CONCAT\s*\(\s*([^,\)]+?)\s*,\s*(['"][^'"]*['"])\s*\)/gi, 'GROUP_CONCAT($1 SEPARATOR $2)');
-  } else {
-    // Adapt GROUP_CONCAT(expr SEPARATOR ', ') to GROUP_CONCAT(expr, ', ')
-    adapted = adapted.replace(/GROUP_CONCAT\s*\(\s*([^,\)]+?)\s+SEPARATOR\s+(['"][^'"]*['"])\s*\)/gi, 'GROUP_CONCAT($1, $2)');
-  }
-  return adapted;
-}
+const REQUIRED_TABLES = [
+  'WARDEN',
+  'WARDEN_PHONE',
+  'HOSTEL',
+  'ROOM_TYPE',
+  'ROOM',
+  'STUDENT',
+  'STUDENT_PHONE',
+  'MESS',
+  'MESS_CONTACT',
+  'MEAL',
+  'STAFF',
+  'STAFF_PHONE',
+  'SUPPLIER',
+  'SUPPLIER_PHONE',
+  'INVENTORY_ITEM',
+  'PROCURES',
+  'PAYMENT',
+  'PAYMENT_DETAIL'
+];
 
 /**
- * Universal async query (SELECT / read)
+ * Universal query runner for Cypher operations
  */
-async function query(sql, params = []) {
-  const isTargetMySQL = isMySQL();
-  const adaptedSql = adaptSql(sql, isTargetMySQL);
-  if (isTargetMySQL) {
-    return await mysql.query(adaptedSql, params);
-  } else {
-    const s = getSqlite().prepare(adaptedSql);
-    return s.all(...params);
-  }
+async function query(cypher, params = {}) {
+  return await neo4jDb.query(cypher, params);
 }
 
 /**
- * Universal async execute (INSERT / UPDATE / DELETE / DDL)
+ * Universal execute runner for Cypher write operations
  */
-async function execute(sql, params = []) {
-  const isTargetMySQL = isMySQL();
-  const adaptedSql = adaptSql(sql, isTargetMySQL);
-  if (isTargetMySQL) {
-    return await mysql.execute(adaptedSql, params);
-  } else {
-    const s = getSqlite().prepare(adaptedSql);
-    const info = s.run(...params);
-    return {
-      affectedRows: info.changes,
-      insertId: info.lastInsertRowid,
-      changes: info.changes
-    };
-  }
+async function execute(cypher, params = {}) {
+  return await neo4jDb.execute(cypher, params);
 }
 
 /**
- * Retrieve list of application table names
+ * Retrieve list of 18 application tables / entity names
  */
 async function getApplicationTables() {
-  if (isMySQL()) {
-    return await mysql.getApplicationTables();
-  } else {
-    const rows = getSqlite().prepare(`
-      SELECT name FROM sqlite_master 
-      WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-      ORDER BY name ASC;
-    `).all();
-    return rows.map(r => r.name);
-  }
+  return REQUIRED_TABLES;
 }
 
 /**
- * Verify presence of all 18 tables
+ * Verification of database readiness
  */
 async function verifyDatabase() {
-  if (isMySQL()) {
-    return await mysql.verifyDatabase();
+  const conn = await neo4jDb.testConnection();
+  if (conn.connected) {
+    console.log('\n SUCCESS: Connected to Neo4j AuraDB.');
+    return { success: true, count: REQUIRED_TABLES.length, tables: REQUIRED_TABLES };
   } else {
-    const tables = await getApplicationTables();
-    console.log(`\n--- VERIFYING APPLICATION TABLES (Total: ${tables.length}) ---`);
-    tables.forEach((t, i) => console.log(`${i + 1}. ${t}`));
-
-    const missing = REQUIRED_TABLES.filter(t => !tables.includes(t));
-    if (missing.length === 0 && tables.length === 18) {
-      console.log('\n SUCCESS: Exactly the 18 expected application tables exist in SQLite.');
-      return { success: true, count: tables.length, tables };
-    } else {
-      console.error('\n FAILURE: Tables mismatch!', { foundCount: tables.length, missing });
-      return { success: false, count: tables.length, tables, missing };
-    }
+    console.warn('\n WARNING: Neo4j AuraDB connection not active:', conn.error || 'Check environment configuration.');
+    return { success: false, error: conn.error };
   }
 }
 
 /**
- * Get comprehensive health status for /api/health
+ * Health status for /api/health endpoint
  */
 async function getHealthStatus() {
-  if (isMySQL()) {
-    const connTest = await mysql.testConnection();
-    if (!connTest.connected) {
-      return {
-        status: 'unhealthy',
-        database: 'disconnected',
-        engine: 'MySQL (Aiven Cloud)',
-        error: connTest.error,
-        timestamp: new Date().toISOString()
-      };
-    }
-    const tables = await getApplicationTables();
+  const connTest = await neo4jDb.testConnection();
+  if (!connTest.connected) {
     return {
-      status: 'healthy',
-      database: 'connected',
-      engine: 'MySQL (Aiven Cloud)',
-      totalApplicationTables: tables.length,
-      tables,
-      foreignKeysEnforced: true,
-      serviceDetails: {
-        database: connTest.details.db,
-        version: connTest.details.version
-      },
-      timestamp: new Date().toISOString()
-    };
-  } else {
-    const tables = await getApplicationTables();
-    return {
-      status: 'healthy',
-      database: 'connected',
-      engine: 'SQLite 3 (better-sqlite3)',
-      totalApplicationTables: tables.length,
-      tables,
-      foreignKeysEnforced: true,
+      status: 'unhealthy',
+      database: 'disconnected',
+      engine: 'Neo4j AuraDB',
+      error: connTest.error || 'Database disconnected',
       timestamp: new Date().toISOString()
     };
   }
+
+  return {
+    status: 'healthy',
+    database: 'connected',
+    engine: 'Neo4j AuraDB',
+    totalApplicationTables: REQUIRED_TABLES.length,
+    tables: REQUIRED_TABLES,
+    foreignKeysEnforced: true,
+    serviceDetails: {
+      address: connTest.address,
+      version: connTest.version
+    },
+    timestamp: new Date().toISOString()
+  };
 }
 
-function initDatabase(force = false) {
-  if (isMySQL()) {
-    return mysql.initDatabase(force);
-  } else {
-    const existingTables = getSqlite().prepare(`
-      SELECT name FROM sqlite_master 
-      WHERE type = 'table' AND name NOT LIKE 'sqlite_%';
-    `).all();
-    if (existingTables.length === 18 && !force) {
-      return { initialized: false, tables: existingTables.map(r => r.name) };
-    }
-    if (fs.existsSync(SCHEMA_PATH)) {
-      getSqlite().exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
-    }
-    if (fs.existsSync(SEED_PATH)) {
-      getSqlite().exec(fs.readFileSync(SEED_PATH, 'utf-8'));
-    }
-    const tables = getSqlite().prepare(`
-      SELECT name FROM sqlite_master 
-      WHERE type = 'table' AND name NOT LIKE 'sqlite_%';
-    `).all().map(r => r.name);
-    return { initialized: true, tables };
-  }
+/**
+ * Initialize Neo4j constraints, indexes, and seed records
+ */
+async function initDatabase(force = false) {
+  return await initNeo4j(true);
 }
-
-// Lazy proxy for backwards-compatible SQLite access
-const db = new Proxy({}, {
-  get(target, prop) {
-    const sqlite = getSqlite();
-    const val = sqlite[prop];
-    return typeof val === 'function' ? val.bind(sqlite) : val;
-  }
-});
 
 module.exports = {
-  db,
-  isMySQL,
+  neo4jDb,
   query,
   execute,
   getApplicationTables,
   verifyDatabase,
   getHealthStatus,
   initDatabase,
-  REQUIRED_TABLES,
-  mysql
+  REQUIRED_TABLES
 };

@@ -6,30 +6,30 @@ const { query, execute } = require('../database');
 router.get('/', async (req, res) => {
   try {
     const rows = await query(`
-      SELECT 
-        h.HostelID AS hostel_id,
-        h.HostelID,
-        h.HostelName AS name,
-        h.HostelName,
-        h.TotalFloors AS total_floors,
-        h.TotalFloors,
-        h.WardenID AS warden_id,
-        h.WardenID,
+      MATCH (h:Hostel)
+      OPTIONAL MATCH (h)-[:MANAGED_BY]->(w:Warden)
+      OPTIONAL MATCH (h)<-[:LOCATED_IN]-(r:Room)
+      OPTIONAL MATCH (h)<-[:RESIDES_IN]-(s:Student)
+      WITH h, w, count(DISTINCT r) AS total_rooms, count(DISTINCT s) AS occupied_rooms, coalesce(sum(r.capacity), 0) AS total_capacity
+      RETURN
+        h.hostelId AS hostel_id,
+        h.hostelId AS HostelID,
+        h.name AS name,
+        h.name AS HostelName,
+        h.totalFloors AS total_floors,
+        h.totalFloors AS TotalFloors,
+        w.wardenId AS warden_id,
+        w.wardenId AS WardenID,
         'Campus Block' AS type,
         'Campus' AS address,
-        w.WardenName AS warden_name,
-        w.WardenName,
-        w.Email AS warden_email,
-        COUNT(DISTINCT r.RoomNo) AS total_rooms,
-        COUNT(DISTINCT s.StudentID) AS occupied_rooms,
-        (CASE WHEN COUNT(DISTINCT r.RoomNo) >= COUNT(DISTINCT s.StudentID) THEN COUNT(DISTINCT r.RoomNo) - COUNT(DISTINCT s.StudentID) ELSE 0 END) AS available_rooms,
-        COALESCE(SUM(r.Capacity), 0) AS total_capacity
-      FROM HOSTEL h
-      LEFT JOIN WARDEN w ON h.WardenID = w.WardenID
-      LEFT JOIN ROOM r ON h.HostelID = r.HostelID
-      LEFT JOIN STUDENT s ON h.HostelID = s.HostelID
-      GROUP BY h.HostelID, h.HostelName, h.TotalFloors, h.WardenID, w.WardenName, w.Email
-      ORDER BY h.HostelID ASC
+        w.name AS warden_name,
+        w.name AS WardenName,
+        w.email AS warden_email,
+        total_rooms,
+        occupied_rooms,
+        (CASE WHEN total_rooms >= occupied_rooms THEN total_rooms - occupied_rooms ELSE 0 END) AS available_rooms,
+        total_capacity
+      ORDER BY h.hostelId ASC
     `);
 
     res.json({ success: true, count: rows.length, data: rows });
@@ -44,24 +44,23 @@ router.get('/:id', async (req, res) => {
   try {
     const hostelId = req.params.id;
     const rows = await query(`
-      SELECT 
-        h.HostelID AS hostel_id,
-        h.HostelID,
-        h.HostelName AS name,
-        h.HostelName,
-        h.TotalFloors AS total_floors,
-        h.TotalFloors,
-        h.WardenID AS warden_id,
-        h.WardenID,
+      MATCH (h:Hostel {hostelId: $hostelId})
+      OPTIONAL MATCH (h)-[:MANAGED_BY]->(w:Warden)
+      RETURN
+        h.hostelId AS hostel_id,
+        h.hostelId AS HostelID,
+        h.name AS name,
+        h.name AS HostelName,
+        h.totalFloors AS total_floors,
+        h.totalFloors AS TotalFloors,
+        w.wardenId AS warden_id,
+        w.wardenId AS WardenID,
         'Campus Block' AS type,
         'Campus' AS address,
-        w.WardenName AS warden_name,
-        w.WardenName,
-        w.Email AS warden_email
-      FROM HOSTEL h
-      LEFT JOIN WARDEN w ON h.WardenID = w.WardenID
-      WHERE h.HostelID = ?
-    `, [hostelId]);
+        w.name AS warden_name,
+        w.name AS WardenName,
+        w.email AS warden_email
+    `, { hostelId });
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Hostel not found' });
@@ -69,22 +68,22 @@ router.get('/:id', async (req, res) => {
 
     const hostel = rows[0];
     const rooms = await query(`
-      SELECT 
-        r.RoomNo AS room_id,
-        r.RoomNo AS room_number,
-        r.RoomNo,
-        r.FloorNo AS floor,
-        r.FloorNo,
-        r.Type AS room_type,
-        r.Type,
-        r.Capacity AS capacity,
-        r.Capacity,
-        r.RoomRent AS fee_per_month,
-        r.RoomRent,
-        r.HostelID
-      FROM ROOM r
-      WHERE r.HostelID = ?
-    `, [hostelId]);
+      MATCH (r:Room)-[:LOCATED_IN]->(h:Hostel {hostelId: $hostelId})
+      RETURN
+        r.roomNo AS room_id,
+        r.roomNo AS room_number,
+        r.roomNo AS RoomNo,
+        r.floorNo AS floor,
+        r.floorNo AS FloorNo,
+        r.type AS room_type,
+        r.type AS Type,
+        r.capacity AS capacity,
+        r.capacity AS Capacity,
+        r.roomRent AS fee_per_month,
+        r.roomRent AS RoomRent,
+        h.hostelId AS HostelID
+      ORDER BY r.floorNo, r.roomNo
+    `, { hostelId });
 
     res.json({ success: true, data: { ...hostel, rooms } });
   } catch (error) {
@@ -102,11 +101,31 @@ router.post('/', async (req, res) => {
     if (!finalName) {
       return res.status(400).json({ success: false, message: 'Hostel name is required' });
     }
+    const finalFloors = Number(TotalFloors || total_floors || 3);
+    const finalWardenId = WardenID || warden_id || null;
 
-    await execute(`
-      INSERT INTO HOSTEL (HostelID, HostelName, TotalFloors, WardenID)
-      VALUES (?, ?, ?, ?)
-    `, [finalId, finalName, Number(TotalFloors || total_floors || 3), WardenID || warden_id || null]);
+    const createCypher = `
+      MERGE (h:Hostel {hostelId: $finalId})
+      SET h.name = $finalName,
+          h.totalFloors = $finalFloors,
+          h.wardenId = $finalWardenId
+      WITH h
+      OPTIONAL MATCH (h)-[rOld:MANAGED_BY]->()
+      DELETE rOld
+      WITH h
+      FOREACH (_ IN CASE WHEN $finalWardenId IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (w:Warden {wardenId: $finalWardenId})
+        MERGE (h)-[:MANAGED_BY]->(w)
+      )
+      RETURN h.hostelId AS hostelId
+    `;
+
+    await execute(createCypher, {
+      finalId,
+      finalName,
+      finalFloors,
+      finalWardenId
+    });
 
     res.status(201).json({ success: true, message: 'Hostel created successfully', hostelId: finalId });
   } catch (error) {
@@ -121,22 +140,38 @@ router.put('/:id', async (req, res) => {
     const hostelId = req.params.id;
     const { HostelName, name, TotalFloors, total_floors, WardenID, warden_id } = req.body;
 
-    const existingRows = await query(`SELECT * FROM HOSTEL WHERE HostelID = ?`, [hostelId]);
+    const existingRows = await query(`MATCH (h:Hostel {hostelId: $hostelId}) RETURN h`, { hostelId });
     if (existingRows.length === 0) {
       return res.status(404).json({ success: false, message: 'Hostel not found' });
     }
-    const existing = existingRows[0];
+    const existing = existingRows[0].h || existingRows[0];
 
-    await execute(`
-      UPDATE HOSTEL SET
-        HostelName = ?, TotalFloors = ?, WardenID = ?
-      WHERE HostelID = ?
-    `, [
-      HostelName || name || existing.HostelName,
-      TotalFloors !== undefined ? Number(TotalFloors) : (total_floors !== undefined ? Number(total_floors) : existing.TotalFloors),
-      WardenID || warden_id || existing.WardenID,
-      hostelId
-    ]);
+    const finalName = HostelName || name || existing.name;
+    const finalFloors = TotalFloors !== undefined ? Number(TotalFloors) : (total_floors !== undefined ? Number(total_floors) : Number(existing.totalFloors));
+    const finalWardenId = WardenID !== undefined ? WardenID : (warden_id !== undefined ? warden_id : existing.wardenId);
+
+    const updateCypher = `
+      MATCH (h:Hostel {hostelId: $hostelId})
+      SET h.name = $finalName,
+          h.totalFloors = $finalFloors,
+          h.wardenId = $finalWardenId
+      WITH h
+      OPTIONAL MATCH (h)-[rOld:MANAGED_BY]->()
+      DELETE rOld
+      WITH h
+      FOREACH (_ IN CASE WHEN $finalWardenId IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (w:Warden {wardenId: $finalWardenId})
+        MERGE (h)-[:MANAGED_BY]->(w)
+      )
+      RETURN h.hostelId AS hostelId
+    `;
+
+    await execute(updateCypher, {
+      hostelId,
+      finalName,
+      finalFloors,
+      finalWardenId
+    });
 
     res.json({ success: true, message: 'Hostel updated successfully' });
   } catch (error) {
@@ -149,7 +184,11 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const hostelId = req.params.id;
-    const [roomCount] = await query(`SELECT COUNT(*) AS count FROM ROOM WHERE HostelID = ?`, [hostelId]);
+    const [roomCount] = await query(`
+      MATCH (r:Room)-[:LOCATED_IN]->(h:Hostel {hostelId: $hostelId})
+      RETURN count(r) AS count
+    `, { hostelId });
+
     if (roomCount && Number(roomCount.count) > 0) {
       return res.status(400).json({
         success: false,
@@ -157,7 +196,11 @@ router.delete('/:id', async (req, res) => {
       });
     }
 
-    await execute(`DELETE FROM HOSTEL WHERE HostelID = ?`, [hostelId]);
+    await execute(`
+      MATCH (h:Hostel {hostelId: $hostelId})
+      DETACH DELETE h
+    `, { hostelId });
+
     res.json({ success: true, message: 'Hostel deleted successfully' });
   } catch (error) {
     console.error('Error deleting hostel:', error);

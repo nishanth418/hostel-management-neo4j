@@ -113,7 +113,7 @@ export default function ReportsPage({ showToast }) {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
-              UNDERLYING RELATIONAL SQL (MYSQL 8.4)
+              UNDERLYING CYPHER / GRAPH QUERY (NEO4J AURADB)
             </span>
             <button
               onClick={copySql}
@@ -121,7 +121,7 @@ export default function ReportsPage({ showToast }) {
               style={{ padding: '3px 10px', fontSize: '0.75rem' }}
             >
               {copied ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
-              <span>{copied ? 'Copied' : 'Copy SQL'}</span>
+              <span>{copied ? 'Copied' : 'Copy Cypher'}</span>
             </button>
           </div>
           <pre
@@ -235,7 +235,7 @@ export default function ReportsPage({ showToast }) {
                       <div className="spin-animation" style={{ display: 'inline-block', marginBottom: 8 }}>
                         <FileBarChart2 size={24} color="var(--primary)" />
                       </div>
-                      <p>Computing relational joins from MySQL...</p>
+                      <p>Computing query results from Neo4j AuraDB...</p>
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (

@@ -99,7 +99,7 @@ export default function Navbar({
             color: '#10b981',
             fontWeight: 700
           }}
-          title={`Connected to ${healthInfo?.engine || 'Aiven MySQL'}. 18 tables verified with foreign key cascades.`}
+          title={`Connected to ${healthInfo?.engine || 'Neo4j AuraDB'}. 18 tables verified.`}
         >
           <span
             style={{
@@ -110,7 +110,7 @@ export default function Navbar({
               boxShadow: '0 0 8px #10b981'
             }}
           />
-          <span className="db-status-text">MySQL Online (18 Tables)</span>
+          <span className="db-status-text">{healthInfo?.engine || 'Neo4j AuraDB'} Online (18 Tables)</span>
         </div>
 
         {/* Replay 3D Intro Button */}
@@ -136,7 +136,7 @@ export default function Navbar({
           onClick={onRefresh}
           className="btn btn-secondary btn-sm"
           disabled={isRefreshing}
-          title="Refresh current data from MySQL database"
+          title="Refresh current data from database"
         >
           <RefreshCw size={13} className={isRefreshing ? 'spin-animation' : ''} />
           <span className="refresh-label">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>

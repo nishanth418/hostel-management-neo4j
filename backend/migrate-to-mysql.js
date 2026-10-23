@@ -32,7 +32,7 @@ const INSERTION_ORDER = [
 async function runMigration() {
   console.log('====================================================');
   console.log(' HOSTEL MANAGEMENT SYSTEM - SQLITE TO MYSQL MIGRATION');
-  console.log(' Target: Aiven Cloud MySQL');
+  console.log(' Target: MySQL');
   console.log('====================================================\n');
 
   if (!fs.existsSync(SQLITE_DB_PATH)) {
@@ -42,7 +42,7 @@ async function runMigration() {
   console.log(`[1/5] Connecting to SQLite at: ${SQLITE_DB_PATH}`);
   const sqlite = new Database(SQLITE_DB_PATH);
 
-  console.log('[2/5] Connecting to Aiven Cloud MySQL...');
+  console.log('[2/5] Connecting to MySQL...');
   const pool = getPool();
   
   // Test connection

@@ -1,18 +1,19 @@
 {
   "name": "hostel-management-backend",
   "version": "1.0.0",
-  "description": "Hostel Management System REST API with SQLite",
+  "description": "Hostel Management System REST API with Neo4j AuraDB",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "init-db": "node -e \"require('./database').initDatabase()\"",
-    "verify-db": "node -e \"require('./database').verifyDatabase()\""
+    "init-db": "node init-neo4j.js",
+    "verify-db": "node verify-database.js",
+    "test-connection": "node test-connection.js",
+    "test-api": "node test-endpoints-and-crud.js"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "mysql2": "^3.24.4"
+    "neo4j-driver": "^6.2.0"
   }
 }

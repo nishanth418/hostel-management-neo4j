@@ -388,7 +388,7 @@ export default function Sidebar({
               </div>
               <div style={{ overflow: 'hidden' }}>
                 <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                  Aiven Cloud MySQL
+                  Neo4j AuraDB
                 </div>
                 <div style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 600 }}>
                   18 / 18 Tables Online

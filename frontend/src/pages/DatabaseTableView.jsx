@@ -309,7 +309,7 @@ export default function DatabaseTableView({ tableName, showToast }) {
                     <div className="spin-animation" style={{ display: 'inline-block', marginBottom: 8 }}>
                       <Database size={24} color="var(--primary)" />
                     </div>
-                    <p>Loading table records from MySQL...</p>
+                    <p>Loading table records from Neo4j AuraDB...</p>
                   </td>
                 </tr>
               ) : rows.length === 0 ? (

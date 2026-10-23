@@ -49,8 +49,7 @@ function getPoolConfig() {
   const isSsl = process.env.DB_SSL !== 'false' && (
     process.env.DB_SSL === 'true' ||
     process.env.DB_SSL === '1' ||
-    Boolean(process.env.DATABASE_URL) ||
-    Boolean(process.env.DB_HOST && process.env.DB_HOST.includes('aivencloud.com'))
+    Boolean(process.env.DATABASE_URL)
   );
   const sslConfig = isSsl ? { rejectUnauthorized: false } : undefined;
 
@@ -187,7 +186,7 @@ async function verifyDatabase() {
 
   const missing = REQUIRED_TABLES.filter(t => !tables.includes(t));
   if (missing.length === 0 && tables.length === 18) {
-    console.log('\n SUCCESS: Exactly the 18 expected application tables exist in Aiven MySQL.');
+    console.log('\n SUCCESS: Exactly the 18 expected application tables exist in MySQL.');
     return { success: true, count: tables.length, tables };
   } else {
     console.error('\n FAILURE: MySQL Tables mismatch!', { foundCount: tables.length, missing });

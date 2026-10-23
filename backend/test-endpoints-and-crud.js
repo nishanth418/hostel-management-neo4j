@@ -5,7 +5,7 @@ const BASE_URL = `http://localhost:${TEST_PORT}`;
 
 async function runAllTests() {
   console.log('=== RUNNING BACKEND ENDPOINT & CRUD INTEGRATION TESTS ===');
-  console.log('Target: Live Aiven Cloud MySQL\n');
+  console.log('Target: Neo4j AuraDB\n');
 
   const server = app.listen(TEST_PORT);
 
@@ -20,7 +20,7 @@ async function runAllTests() {
     console.log(' - Engine:', healthData.engine);
     console.log(' - Database Status:', healthData.database);
     console.log(' - Total Tables:', healthData.totalApplicationTables);
-    if (healthRes.status !== 200 || healthData.engine !== 'MySQL (Aiven Cloud)' || healthData.totalApplicationTables !== 18) {
+    if (healthRes.status !== 200 || !healthData.engine.includes('Neo4j') || healthData.totalApplicationTables !== 18) {
       throw new Error(`Health check validation failed: ${JSON.stringify(healthData)}`);
     }
     console.log(' PASS: /api/health verified\n');

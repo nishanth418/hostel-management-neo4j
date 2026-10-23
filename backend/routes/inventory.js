@@ -6,38 +6,32 @@ const { query, execute } = require('../database');
 router.get('/', async (req, res) => {
   try {
     const { category, search } = req.query;
-    let sql = `
-      SELECT 
-        i.ItemID AS item_id,
-        i.ItemID,
-        i.ItemName AS item_name,
-        i.ItemName AS name,
-        i.ItemName,
-        i.Category AS category,
-        i.Category,
-        i.Unit AS unit,
-        i.Unit,
-        COALESCE((SELECT SUM(p.Quantity) FROM PROCURES p WHERE p.ItemID = i.ItemID), 0) AS quantity,
+
+    const rows = await query(`
+      MATCH (i:InventoryItem)
+      WHERE ($category IS NULL OR i.category = $category)
+        AND ($search IS NULL OR toLower(i.name) CONTAINS toLower($search) OR toLower(i.category) CONTAINS toLower($search))
+      OPTIONAL MATCH (p:Procurement)-[:INCLUDES_ITEM]->(i)
+      WITH i, coalesce(sum(p.quantity), 0) AS totalQuantity
+      RETURN
+        i.itemId AS item_id,
+        i.itemId AS ItemID,
+        i.name AS item_name,
+        i.name AS name,
+        i.name AS ItemName,
+        i.category AS category,
+        i.category AS Category,
+        i.unit AS unit,
+        i.unit AS Unit,
+        totalQuantity AS quantity,
         100 AS min_required_quantity,
-        0 AS is_low_stock
-      FROM INVENTORY_ITEM i
-      WHERE 1=1
-    `;
-    const params = [];
+        CASE WHEN totalQuantity < 100 THEN 1 ELSE 0 END AS is_low_stock
+      ORDER BY i.category ASC, i.name ASC
+    `, {
+      category: category && category.trim() ? category.trim() : null,
+      search: search && search.trim() ? search.trim() : null
+    });
 
-    if (category && category.trim()) {
-      sql += ` AND i.Category = ?`;
-      params.push(category.trim());
-    }
-    if (search && search.trim()) {
-      sql += ` AND (i.ItemName LIKE ? OR i.Category LIKE ?)`;
-      const s = `%${search.trim()}%`;
-      params.push(s, s);
-    }
-
-    sql += ` ORDER BY i.Category ASC, i.ItemName ASC`;
-
-    const rows = await query(sql, params);
     res.json({ success: true, count: rows.length, data: rows });
   } catch (error) {
     console.error('Error fetching inventory items:', error);
@@ -50,35 +44,57 @@ router.get('/:id', async (req, res) => {
   try {
     const itemId = req.params.id;
     const rows = await query(`
-      SELECT 
-        i.ItemID AS item_id,
-        i.ItemID,
-        i.ItemName AS item_name,
-        i.ItemName AS name,
-        i.ItemName,
-        i.Category AS category,
-        i.Category,
-        i.Unit AS unit,
-        i.Unit,
-        COALESCE((SELECT SUM(p.Quantity) FROM PROCURES p WHERE p.ItemID = i.ItemID), 0) AS quantity,
-        100 AS min_required_quantity
-      FROM INVENTORY_ITEM i
-      WHERE i.ItemID = ?
-    `, [itemId]);
+      MATCH (i:InventoryItem {itemId: $id})
+      OPTIONAL MATCH (p:Procurement)-[:INCLUDES_ITEM]->(i)
+      OPTIONAL MATCH (p)-[:SUPPLIED_BY]->(s:Supplier)
+      WITH i, p, s
+      WITH i, coalesce(sum(p.quantity), 0) AS totalQuantity,
+           collect(DISTINCT {
+             MessID: p.messId,
+             SupplierID: p.supplierId,
+             ItemID: i.itemId,
+             quantity: p.quantity,
+             supplier_name: s.name
+           }) AS raw_procurements
+      RETURN
+        i.itemId AS item_id,
+        i.itemId AS ItemID,
+        i.name AS item_name,
+        i.name AS name,
+        i.name AS ItemName,
+        i.category AS category,
+        i.category AS Category,
+        i.unit AS unit,
+        i.unit AS Unit,
+        totalQuantity AS quantity,
+        100 AS min_required_quantity,
+        raw_procurements
+    `, { id: itemId });
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Item not found' });
     }
 
-    const item = rows[0];
-    const procurements = await query(`
-      SELECT p.MessID, p.SupplierID, p.ItemID, p.Quantity as quantity, s.SupplierName as supplier_name
-      FROM PROCURES p
-      JOIN SUPPLIER s ON p.SupplierID = s.SupplierID
-      WHERE p.ItemID = ?
-    `, [itemId]);
+    const row = rows[0];
+    const procurements = (row.raw_procurements || []).filter(p => p && p.ItemID);
 
-    res.json({ success: true, data: { ...item, procurements } });
+    res.json({
+      success: true,
+      data: {
+        item_id: row.item_id,
+        ItemID: row.ItemID,
+        item_name: row.item_name,
+        name: row.name,
+        ItemName: row.ItemName,
+        category: row.category,
+        Category: row.Category,
+        unit: row.unit,
+        Unit: row.Unit,
+        quantity: row.quantity,
+        min_required_quantity: row.min_required_quantity,
+        procurements
+      }
+    });
   } catch (error) {
     console.error('Error fetching inventory item by ID:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -97,9 +113,16 @@ router.post('/', async (req, res) => {
     }
 
     await execute(`
-      INSERT INTO INVENTORY_ITEM (ItemID, ItemName, Category, Unit)
-      VALUES (?, ?, ?, ?)
-    `, [finalId, finalName, Category || category || 'General', Unit || unit || 'Kg']);
+      MERGE (i:InventoryItem {itemId: $itemId})
+      SET i.name = $name,
+          i.category = $category,
+          i.unit = $unit
+    `, {
+      itemId: finalId,
+      name: finalName,
+      category: Category || category || 'General',
+      unit: Unit || unit || 'Kg'
+    });
 
     res.status(201).json({ success: true, message: 'Item created successfully', itemId: finalId });
   } catch (error) {
@@ -114,22 +137,26 @@ router.put('/:id', async (req, res) => {
     const itemId = req.params.id;
     const body = req.body || {};
 
-    const existingRows = await query(`SELECT * FROM INVENTORY_ITEM WHERE ItemID = ?`, [itemId]);
-    if (existingRows.length === 0) {
+    const check = await query(`MATCH (i:InventoryItem {itemId: $id}) RETURN i`, { id: itemId });
+    if (check.length === 0) {
       return res.status(404).json({ success: false, message: 'Item not found' });
     }
-    const existing = existingRows[0];
+
+    const name = body.ItemName || body.item_name || body.name || null;
+    const category = body.Category || body.category || null;
+    const unit = body.Unit || body.unit || null;
 
     await execute(`
-      UPDATE INVENTORY_ITEM SET
-        ItemName = ?, Category = ?, Unit = ?
-      WHERE ItemID = ?
-    `, [
-      body.ItemName || body.item_name || body.name || existing.ItemName,
-      body.Category || body.category || existing.Category,
-      body.Unit || body.unit || existing.Unit,
-      itemId
-    ]);
+      MATCH (i:InventoryItem {itemId: $id})
+      SET i.name = CASE WHEN $name IS NOT NULL THEN $name ELSE i.name END,
+          i.category = CASE WHEN $category IS NOT NULL THEN $category ELSE i.category END,
+          i.unit = CASE WHEN $unit IS NOT NULL THEN $unit ELSE i.unit END
+    `, {
+      id: itemId,
+      name,
+      category,
+      unit
+    });
 
     res.json({ success: true, message: 'Item updated successfully' });
   } catch (error) {
@@ -142,7 +169,10 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const itemId = req.params.id;
-    await execute(`DELETE FROM INVENTORY_ITEM WHERE ItemID = ?`, [itemId]);
+    await execute(`
+      MATCH (i:InventoryItem {itemId: $id})
+      DETACH DELETE i
+    `, { id: itemId });
     res.json({ success: true, message: 'Item deleted successfully' });
   } catch (error) {
     console.error('Error deleting inventory item:', error);

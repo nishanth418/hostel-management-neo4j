@@ -85,7 +85,7 @@ export default function DashboardPage({ onNavigate }) {
           <TrendingUp size={36} color="var(--primary)" />
         </div>
         <h3 style={{ color: 'var(--text-primary)', marginBottom: 6 }}>Syncing Live Database Telemetry...</h3>
-        <p style={{ fontSize: '0.9rem' }}>Querying active metrics from Aiven Cloud MySQL engine</p>
+        <p style={{ fontSize: '0.9rem' }}>Querying active metrics from database engine</p>
       </div>
     );
   }
@@ -401,7 +401,7 @@ export default function DashboardPage({ onNavigate }) {
             <h3 className="panel-title">Relational Tables Explorer (18 Live Database Tables)</h3>
           </div>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Direct MySQL schema with PK/FK enforcement
+            Direct Neo4j AuraDB schema with 18 table views
           </span>
         </div>
 

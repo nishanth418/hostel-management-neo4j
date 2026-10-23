@@ -6,232 +6,237 @@ const REPORT_DEFINITIONS = {
   'student-room-hostel': {
     title: '1. Student + Room + Hostel Report',
     description: 'Detailed allocation listing of students with their assigned rooms, floors, and hostels.',
-    sql: `
-      SELECT 
-        s.StudentID,
-        CONCAT(s.FirstName, ' ', s.LastName) AS StudentName,
-        s.Email,
-        s.Gender,
-        s.PlanType,
-        COALESCE(r.RoomNo, 'Unassigned') AS RoomNo,
-        COALESCE(r.FloorNo, 0) AS FloorNo,
-        COALESCE(h.HostelName, 'Unassigned') AS HostelName
-      FROM STUDENT s
-      LEFT JOIN ROOM r ON s.RoomNo = r.RoomNo
-      LEFT JOIN HOSTEL h ON s.HostelID = h.HostelID
-      ORDER BY s.StudentID ASC;
+    cypher: `
+      MATCH (s:Student)
+      OPTIONAL MATCH (s)-[:ALLOCATED_TO]->(r:Room)
+      OPTIONAL MATCH (s)-[:RESIDES_IN]->(h:Hostel)
+      RETURN
+        s.studentId AS StudentID,
+        rtrim(coalesce(s.firstName, '') + ' ' + coalesce(s.lastName, '')) AS StudentName,
+        s.email AS Email,
+        s.gender AS Gender,
+        s.planType AS PlanType,
+        coalesce(r.roomNo, s.roomNo, 'Unassigned') AS RoomNo,
+        coalesce(r.floorNo, 0) AS FloorNo,
+        coalesce(h.name, 'Unassigned') AS HostelName
+      ORDER BY s.studentId ASC
     `
   },
   'student-phones': {
     title: '2. Student + Student Phone Report',
     description: 'Multi-phone contact registry mapping all contact numbers per student.',
-    sql: `
-      SELECT 
-        s.StudentID,
-        CONCAT(s.FirstName, ' ', s.LastName) AS StudentName,
-        s.Email,
-        sp.PhoneNo
-      FROM STUDENT s
-      JOIN STUDENT_PHONE sp ON s.StudentID = sp.StudentID
-      ORDER BY s.StudentID, sp.PhoneNo;
+    cypher: `
+      MATCH (s:Student)
+      UNWIND s.phones AS PhoneNo
+      RETURN
+        s.studentId AS StudentID,
+        rtrim(coalesce(s.firstName, '') + ' ' + coalesce(s.lastName, '')) AS StudentName,
+        s.email AS Email,
+        PhoneNo
+      ORDER BY s.studentId, PhoneNo
     `
   },
   'hostel-warden': {
     title: '3. Hostel + Warden Report',
     description: 'Administrative hierarchy connecting each hostel building to its presiding warden and phone numbers.',
-    sql: `
-      SELECT 
-        h.HostelID,
-        h.HostelName,
-        h.TotalFloors,
-        w.WardenID,
-        COALESCE(w.WardenName, 'No Warden Assigned') AS WardenName,
-        COALESCE(w.Email, '-') AS WardenEmail,
-        (SELECT GROUP_CONCAT(wp.PhoneNo, ', ') FROM WARDEN_PHONE wp WHERE wp.WardenID = w.WardenID) AS WardenPhones
-      FROM HOSTEL h
-      LEFT JOIN WARDEN w ON h.WardenID = w.WardenID
-      ORDER BY h.HostelID ASC;
-    `
+    cypher: `
+      MATCH (h:Hostel)
+      OPTIONAL MATCH (h)-[:MANAGED_BY]->(w:Warden)
+      RETURN
+        h.hostelId AS HostelID,
+        h.name AS HostelName,
+        h.totalFloors AS TotalFloors,
+        w.wardenId AS WardenID,
+        coalesce(w.name, 'No Warden Assigned') AS WardenName,
+        coalesce(w.email, '-') AS WardenEmail,
+        w.phones AS phones
+      ORDER BY h.hostelId ASC
+    `,
+    formatter: (rows) => rows.map(r => ({
+      ...r,
+      WardenPhones: Array.isArray(r.phones) ? r.phones.join(', ') : (r.phones || '')
+    }))
   },
   'room-type-hostel': {
     title: '4. Room + Hostel Report',
     description: 'Inventory of all rooms with room configurations, bed capacities, room rents, and hostel locations.',
-    sql: `
-      SELECT 
-        r.RoomNo,
-        r.FloorNo,
-        r.Type AS RoomType,
-        r.Capacity,
-        r.RoomRent,
-        h.HostelName
-      FROM ROOM r
-      JOIN HOSTEL h ON r.HostelID = h.HostelID
-      ORDER BY h.HostelName, r.FloorNo, r.RoomNo;
+    cypher: `
+      MATCH (r:Room)
+      OPTIONAL MATCH (r)-[:LOCATED_IN]->(h:Hostel)
+      RETURN
+        r.roomNo AS RoomNo,
+        r.floorNo AS FloorNo,
+        r.type AS RoomType,
+        r.capacity AS Capacity,
+        r.roomRent AS RoomRent,
+        coalesce(h.name, 'Campus Hostel') AS HostelName
+      ORDER BY HostelName, r.floorNo, r.roomNo
     `
   },
   'mess-meal': {
     title: '5. Mess + Meal Report',
     description: 'Meal menus, descriptions, and costs across all mess halls.',
-    sql: `
-      SELECT 
-        m.MessID,
-        m.MessName,
-        m.MessType,
-        m.Location,
-        ml.MealID,
-        ml.MealName,
-        ml.Description,
-        ml.Cost
-      FROM MESS m
-      JOIN MEAL ml ON m.MessID = ml.MessID
-      ORDER BY m.MessID, ml.MealID;
+    cypher: `
+      MATCH (ml:Meal)
+      OPTIONAL MATCH (ml)-[:SERVED_IN]->(m:Mess)
+      RETURN
+        m.messId AS MessID,
+        m.name AS MessName,
+        m.messType AS MessType,
+        m.location AS Location,
+        ml.mealId AS MealID,
+        ml.name AS MealName,
+        ml.description AS Description,
+        ml.cost AS Cost
+      ORDER BY m.messId, ml.mealId
     `
   },
   'mess-staff': {
     title: '6. Mess + Staff Report',
     description: 'Kitchen and service personnel assigned to each mess hall with roles and contacts.',
-    sql: `
-      SELECT 
-        m.MessID,
-        m.MessName,
-        st.StaffID,
-        st.StaffName,
-        st.Role,
-        st.Salary,
-        (SELECT GROUP_CONCAT(sp.PhoneNo, ', ') FROM STAFF_PHONE sp WHERE sp.StaffID = st.StaffID) AS StaffPhones
-      FROM MESS m
-      JOIN STAFF st ON m.MessID = st.MessID
-      ORDER BY m.MessName, st.Role, st.StaffName;
-    `
+    cypher: `
+      MATCH (st:Staff)
+      OPTIONAL MATCH (st)-[:ASSIGNED_TO]->(m:Mess)
+      RETURN
+        m.messId AS MessID,
+        m.name AS MessName,
+        st.staffId AS StaffID,
+        st.name AS StaffName,
+        st.role AS Role,
+        st.salary AS Salary,
+        st.phones AS phones
+      ORDER BY m.name, st.role, st.name
+    `,
+    formatter: (rows) => rows.map(r => ({
+      ...r,
+      StaffPhones: Array.isArray(r.phones) ? r.phones.join(', ') : (r.phones || '')
+    }))
   },
   'supplier-inventory': {
     title: '7. Supplier + Inventory Report',
     description: 'Matrix of verified vendors and the inventory items procured.',
-    sql: `
-      SELECT 
-        s.SupplierID,
-        s.SupplierName,
-        i.ItemID,
-        i.ItemName,
-        i.Category,
-        i.Unit,
-        p.Quantity
-      FROM SUPPLIER s
-      JOIN PROCURES p ON s.SupplierID = p.SupplierID
-      JOIN INVENTORY_ITEM i ON p.ItemID = i.ItemID
-      ORDER BY s.SupplierName, i.ItemName;
+    cypher: `
+      MATCH (p:Procurement)
+      OPTIONAL MATCH (p)-[:SUPPLIED_BY]->(s:Supplier)
+      OPTIONAL MATCH (p)-[:INCLUDES_ITEM]->(i:InventoryItem)
+      RETURN
+        s.supplierId AS SupplierID,
+        s.name AS SupplierName,
+        i.itemId AS ItemID,
+        i.name AS ItemName,
+        i.category AS Category,
+        i.unit AS Unit,
+        p.quantity AS Quantity
+      ORDER BY s.name, i.name
     `
   },
   'procurement-supplier-inventory': {
     title: '8. Procurement + Supplier + Inventory Report',
     description: 'Purchase ledger linking procurement quantities to mess halls, vendors, and items.',
-    sql: `
-      SELECT 
-        m.MessName,
-        s.SupplierName,
-        i.ItemName,
-        i.Category,
-        p.Quantity,
-        i.Unit
-      FROM PROCURES p
-      JOIN MESS m ON p.MessID = m.MessID
-      JOIN SUPPLIER s ON p.SupplierID = s.SupplierID
-      JOIN INVENTORY_ITEM i ON p.ItemID = i.ItemID
-      ORDER BY m.MessName, s.SupplierName;
+    cypher: `
+      MATCH (p:Procurement)
+      OPTIONAL MATCH (m:Mess)-[:PLACED_ORDER]->(p)
+      OPTIONAL MATCH (p)-[:SUPPLIED_BY]->(s:Supplier)
+      OPTIONAL MATCH (p)-[:INCLUDES_ITEM]->(i:InventoryItem)
+      RETURN
+        m.name AS MessName,
+        s.name AS SupplierName,
+        i.name AS ItemName,
+        i.category AS Category,
+        p.quantity AS Quantity,
+        i.unit AS Unit
+      ORDER BY m.name, s.name
     `
   },
   'student-payment': {
     title: '9. Student + Payment Report',
     description: 'Complete fee payment transactions joined with student records.',
-    sql: `
-      SELECT 
-        p.PaymentID,
-        p.Amount,
-        p.PaymentMode,
-        p.Status,
-        CONCAT(p.PaymentDay, '-', p.PaymentMonth, '-', p.PaymentYear) AS PaymentDate,
-        s.StudentID,
-        CONCAT(s.FirstName, ' ', s.LastName) AS StudentName,
-        s.Email,
-        s.RoomNo,
-        h.HostelName
-      FROM PAYMENT p
-      JOIN STUDENT s ON p.StudentID = s.StudentID
-      LEFT JOIN HOSTEL h ON s.HostelID = h.HostelID
-      ORDER BY p.PaymentID ASC;
+    cypher: `
+      MATCH (p:Payment)
+      OPTIONAL MATCH (p)-[:PAID_BY]->(s:Student)
+      OPTIONAL MATCH (s)-[:RESIDES_IN]->(h:Hostel)
+      RETURN
+        p.paymentId AS PaymentID,
+        p.amount AS Amount,
+        p.paymentMode AS PaymentMode,
+        p.status AS Status,
+        toString(p.paymentDay) + '-' + toString(p.paymentMonth) + '-' + toString(p.paymentYear) AS PaymentDate,
+        s.studentId AS StudentID,
+        rtrim(coalesce(s.firstName, '') + ' ' + coalesce(s.lastName, '')) AS StudentName,
+        s.email AS Email,
+        s.roomNo AS RoomNo,
+        h.name AS HostelName
+      ORDER BY p.paymentId ASC
     `
   },
   'hostel-occupancy': {
     title: '10. Overall Hostel Occupancy Report',
     description: 'High-level aggregation of hostels, total rooms, and bed capacity.',
-    sql: `
-      SELECT 
-        h.HostelID,
-        h.HostelName,
-        h.TotalFloors,
-        COUNT(r.RoomNo) AS TotalRooms,
-        COALESCE(SUM(r.Capacity), 0) AS TotalBedCapacity,
-        COUNT(DISTINCT s.StudentID) AS AssignedStudents
-      FROM HOSTEL h
-      LEFT JOIN ROOM r ON h.HostelID = r.HostelID
-      LEFT JOIN STUDENT s ON h.HostelID = s.HostelID
-      GROUP BY h.HostelID, h.HostelName, h.TotalFloors
-      ORDER BY h.HostelID;
+    cypher: `
+      MATCH (h:Hostel)
+      OPTIONAL MATCH (r:Room)-[:LOCATED_IN]->(h)
+      WITH h, count(r) AS TotalRooms, coalesce(sum(r.capacity), 0) AS TotalBedCapacity
+      OPTIONAL MATCH (s:Student)-[:RESIDES_IN]->(h)
+      RETURN
+        h.hostelId AS HostelID,
+        h.name AS HostelName,
+        h.totalFloors AS TotalFloors,
+        TotalRooms,
+        TotalBedCapacity,
+        count(s) AS AssignedStudents
+      ORDER BY h.hostelId
     `
   },
   'available-rooms': {
     title: '11. Available Rooms Report',
     description: 'Directory of rooms and student assignments across campus.',
-    sql: `
-      SELECT 
-        r.RoomNo,
-        r.FloorNo,
-        r.Type AS RoomType,
-        r.Capacity,
-        r.RoomRent,
-        h.HostelName,
-        COUNT(s.StudentID) AS OccupantsCount
-      FROM ROOM r
-      JOIN HOSTEL h ON r.HostelID = h.HostelID
-      LEFT JOIN STUDENT s ON r.RoomNo = s.RoomNo
-      GROUP BY r.RoomNo, r.FloorNo, r.Type, r.Capacity, r.RoomRent, h.HostelName
-      ORDER BY h.HostelName, r.FloorNo, r.RoomNo;
+    cypher: `
+      MATCH (r:Room)
+      OPTIONAL MATCH (r)-[:LOCATED_IN]->(h:Hostel)
+      OPTIONAL MATCH (s:Student)-[:ALLOCATED_TO]->(r)
+      RETURN
+        r.roomNo AS RoomNo,
+        r.floorNo AS FloorNo,
+        r.type AS RoomType,
+        r.capacity AS Capacity,
+        r.roomRent AS RoomRent,
+        coalesce(h.name, 'Campus Hostel') AS HostelName,
+        count(s) AS OccupantsCount
+      ORDER BY HostelName, r.floorNo, r.roomNo
     `
   },
   'student-payment-summary': {
     title: '12. Student Payment Summary Report',
     description: 'Financial rollup calculating total payment amounts aggregated per student.',
-    sql: `
-      SELECT 
-        s.StudentID,
-        CONCAT(s.FirstName, ' ', s.LastName) AS StudentName,
-        s.Email,
-        s.RoomNo,
-        h.HostelName,
-        COUNT(p.PaymentID) AS TotalTransactions,
-        COALESCE(SUM(p.Amount), 0) AS TotalPaidAmount
-      FROM STUDENT s
-      LEFT JOIN HOSTEL h ON s.HostelID = h.HostelID
-      LEFT JOIN PAYMENT p ON s.StudentID = p.StudentID
-      GROUP BY s.StudentID, s.FirstName, s.LastName, s.Email, s.RoomNo, h.HostelName
-      ORDER BY TotalPaidAmount DESC;
+    cypher: `
+      MATCH (s:Student)
+      OPTIONAL MATCH (s)-[:RESIDES_IN]->(h:Hostel)
+      OPTIONAL MATCH (p:Payment)-[:PAID_BY]->(s)
+      RETURN
+        s.studentId AS StudentID,
+        rtrim(coalesce(s.firstName, '') + ' ' + coalesce(s.lastName, '')) AS StudentName,
+        s.email AS Email,
+        s.roomNo AS RoomNo,
+        h.name AS HostelName,
+        count(p) AS TotalTransactions,
+        coalesce(sum(p.amount), 0) AS TotalPaidAmount
+      ORDER BY TotalPaidAmount DESC
     `
   },
   'inventory-procurement-summary': {
     title: '13. Inventory & Procurement Summary Report',
     description: 'Combined stock and procurement totals grouped by inventory item.',
-    sql: `
-      SELECT 
-        i.ItemID,
-        i.ItemName,
-        i.Category,
-        i.Unit,
-        COUNT(p.MessID) AS ProcurementOrdersCount,
-        COALESCE(SUM(p.Quantity), 0) AS TotalProcuredQuantity
-      FROM INVENTORY_ITEM i
-      LEFT JOIN PROCURES p ON i.ItemID = p.ItemID
-      GROUP BY i.ItemID, i.ItemName, i.Category, i.Unit
-      ORDER BY i.Category, i.ItemName;
+    cypher: `
+      MATCH (i:InventoryItem)
+      OPTIONAL MATCH (p:Procurement)-[:INCLUDES_ITEM]->(i)
+      RETURN
+        i.itemId AS ItemID,
+        i.name AS ItemName,
+        i.category AS Category,
+        i.unit AS Unit,
+        count(p) AS ProcurementOrdersCount,
+        coalesce(sum(p.quantity), 0) AS TotalProcuredQuantity
+      ORDER BY i.category, i.name
     `
   }
 };
@@ -256,7 +261,10 @@ router.get('/:reportKey', async (req, res) => {
     }
 
     const startTime = process.hrtime();
-    const rows = await query(report.sql);
+    let rows = await query(report.cypher);
+    if (typeof report.formatter === 'function') {
+      rows = report.formatter(rows);
+    }
     const diff = process.hrtime(startTime);
     const executionTimeMs = (diff[0] * 1000 + diff[1] / 1e6).toFixed(2);
 
@@ -265,7 +273,8 @@ router.get('/:reportKey', async (req, res) => {
       reportKey,
       title: report.title,
       description: report.description,
-      sql: report.sql.trim(),
+      sql: report.cypher.trim(),
+      cypher: report.cypher.trim(),
       executionTimeMs,
       count: rows.length,
       data: rows

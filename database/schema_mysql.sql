@@ -1,7 +1,7 @@
 -- ==========================================================
 -- Hostel Management System - Exact Relational Schema (MySQL)
 -- Exactly 18 Tables with Exact Original Attributes & Foreign Keys
--- Designed for Aiven Cloud MySQL (InnoDB / utf8mb4)
+-- Designed for MySQL (InnoDB / utf8mb4)
 -- ==========================================================
 
 SET FOREIGN_KEY_CHECKS = 0;

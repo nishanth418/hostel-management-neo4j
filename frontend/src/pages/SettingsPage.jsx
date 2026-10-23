@@ -35,7 +35,7 @@ export default function SettingsPage({
       const end = performance.now();
       const latency = Math.round(end - start);
       setPingLatency(latency);
-      showToast(`Database latency: ${latency}ms (Aiven MySQL live)`, 'success');
+      showToast(`Database latency: ${latency}ms live`, 'success');
       if (onRefreshHealth) onRefreshHealth();
     } catch (err) {
       showToast(`Connection failed: ${err.message}`, 'error');
@@ -187,7 +187,7 @@ export default function SettingsPage({
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--bg-input)', borderRadius: '8px', border: '1px solid var(--bg-card-border)' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Engine Type:</span>
               <span style={{ fontWeight: 700, color: '#38bdf8', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
-                {healthInfo?.engine || 'Aiven MySQL 8.4 (Cloud)'}
+                {healthInfo?.engine || 'Neo4j AuraDB'}
               </span>
             </div>
 

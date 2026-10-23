@@ -6,27 +6,33 @@ const { query, execute } = require('../database');
 router.get('/', async (req, res) => {
   try {
     const rows = await query(`
-      SELECT 
-        m.MessID AS mess_id,
-        m.MessID,
-        m.MessName AS mess_name,
-        m.MessName AS name,
-        m.MessName,
-        m.MessType AS type,
-        m.MessType AS mess_type,
-        m.MessType,
-        m.Location AS location,
-        m.Location,
-        GROUP_CONCAT(mc.ContactNo, ', ') AS contact_numbers,
-        (SELECT COUNT(*) FROM MEAL ml WHERE ml.MessID = m.MessID) AS total_meals_scheduled,
-        (SELECT COUNT(*) FROM STAFF st WHERE st.MessID = m.MessID) AS staff_count
-      FROM MESS m
-      LEFT JOIN MESS_CONTACT mc ON m.MessID = mc.MessID
-      GROUP BY m.MessID, m.MessName, m.MessType, m.Location
-      ORDER BY m.MessID ASC
+      MATCH (m:Mess)
+      OPTIONAL MATCH (ml:Meal)-[:SERVED_IN]->(m)
+      OPTIONAL MATCH (st:Staff)-[:ASSIGNED_TO]->(m)
+      WITH m, count(DISTINCT ml) AS total_meals_scheduled, count(DISTINCT st) AS staff_count
+      RETURN
+        m.messId AS mess_id,
+        m.messId AS MessID,
+        m.name AS mess_name,
+        m.name AS name,
+        m.name AS MessName,
+        m.messType AS type,
+        m.messType AS mess_type,
+        m.messType AS MessType,
+        m.location AS location,
+        m.location AS Location,
+        m.contacts AS contacts,
+        total_meals_scheduled,
+        staff_count
+      ORDER BY m.messId ASC
     `);
 
-    res.json({ success: true, count: rows.length, data: rows });
+    const formatted = rows.map(r => ({
+      ...r,
+      contact_numbers: Array.isArray(r.contacts) ? r.contacts.join(', ') : (r.contacts || '')
+    }));
+
+    res.json({ success: true, count: formatted.length, data: formatted });
   } catch (error) {
     console.error('Error fetching mess list:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -38,32 +44,52 @@ router.get('/:id', async (req, res) => {
   try {
     const messId = req.params.id;
     const rows = await query(`
-      SELECT 
-        m.MessID AS mess_id,
-        m.MessID,
-        m.MessName AS mess_name,
-        m.MessName AS name,
-        m.MessName,
-        m.MessType AS type,
-        m.MessType AS mess_type,
-        m.MessType,
-        m.Location AS location,
-        m.Location
-      FROM MESS m
-      WHERE m.MessID = ?
-    `, [messId]);
+      MATCH (m:Mess {messId: $id})
+      OPTIONAL MATCH (ml:Meal)-[:SERVED_IN]->(m)
+      OPTIONAL MATCH (st:Staff)-[:ASSIGNED_TO]->(m)
+      RETURN
+        m.messId AS mess_id,
+        m.messId AS MessID,
+        m.name AS mess_name,
+        m.name AS name,
+        m.name AS MessName,
+        m.messType AS type,
+        m.messType AS mess_type,
+        m.messType AS MessType,
+        m.location AS location,
+        m.location AS Location,
+        m.contacts AS contacts,
+        collect(DISTINCT { meal_id: ml.mealId, meal_name: ml.name, description: ml.description, cost: ml.cost }) AS raw_meals,
+        collect(DISTINCT { staff_id: st.staffId, name: st.name, role: st.role }) AS raw_staff
+    `, { id: messId });
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Mess not found' });
     }
 
-    const mess = rows[0];
-    const contactRows = await query(`SELECT ContactNo as contact_number FROM MESS_CONTACT WHERE MessID = ?`, [messId]);
-    const contacts = contactRows.map(c => c.contact_number);
-    const meals = await query(`SELECT MealID as meal_id, MealName as meal_name, Description as description, Cost as cost FROM MEAL WHERE MessID = ?`, [messId]);
-    const staff = await query(`SELECT StaffID as staff_id, StaffName as name, Role as role FROM STAFF WHERE MessID = ?`, [messId]);
+    const row = rows[0];
+    const contacts = Array.isArray(row.contacts) ? row.contacts : [];
+    const meals = (row.raw_meals || []).filter(m => m && m.meal_id);
+    const staff = (row.raw_staff || []).filter(s => s && s.staff_id);
 
-    res.json({ success: true, data: { ...mess, contacts, meals, staff } });
+    res.json({
+      success: true,
+      data: {
+        mess_id: row.mess_id,
+        MessID: row.MessID,
+        mess_name: row.mess_name,
+        name: row.name,
+        MessName: row.MessName,
+        type: row.type,
+        mess_type: row.mess_type,
+        MessType: row.MessType,
+        location: row.location,
+        Location: row.Location,
+        contacts,
+        meals,
+        staff
+      }
+    });
   } catch (error) {
     console.error('Error fetching mess by ID:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -80,18 +106,23 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Mess name is required' });
     }
 
-    await execute(`
-      INSERT INTO MESS (MessID, MessName, MessType, Location)
-      VALUES (?, ?, ?, ?)
-    `, [finalId, finalName, MessType || type || mess_type || 'Mixed', Location || location || 'Campus Block']);
+    const contactList = Array.isArray(contacts)
+      ? contacts.map(c => String(c).trim()).filter(Boolean)
+      : [];
 
-    if (contacts && Array.isArray(contacts)) {
-      for (const c of contacts) {
-        if (c && String(c).trim()) {
-          await execute(`INSERT INTO MESS_CONTACT (MessID, ContactNo) VALUES (?, ?)`, [finalId, String(c).trim()]);
-        }
-      }
-    }
+    await execute(`
+      MERGE (m:Mess {messId: $messId})
+      SET m.name = $name,
+          m.messType = $messType,
+          m.location = $location,
+          m.contacts = $contacts
+    `, {
+      messId: finalId,
+      name: finalName,
+      messType: MessType || type || mess_type || 'Mixed',
+      location: Location || location || 'Campus Block',
+      contacts: contactList
+    });
 
     res.status(201).json({ success: true, message: 'Mess created successfully', messId: finalId });
   } catch (error) {
@@ -106,31 +137,31 @@ router.put('/:id', async (req, res) => {
     const messId = req.params.id;
     const body = req.body || {};
 
-    const existingRows = await query(`SELECT * FROM MESS WHERE MessID = ?`, [messId]);
-    if (existingRows.length === 0) {
+    const check = await query(`MATCH (m:Mess {messId: $id}) RETURN m`, { id: messId });
+    if (check.length === 0) {
       return res.status(404).json({ success: false, message: 'Mess not found' });
     }
-    const existing = existingRows[0];
+
+    const name = body.MessName || body.mess_name || body.name || null;
+    const messType = body.MessType || body.type || body.mess_type || null;
+    const location = body.Location || body.location || null;
+    const contacts = Array.isArray(body.contacts)
+      ? body.contacts.map(c => String(c).trim()).filter(Boolean)
+      : null;
 
     await execute(`
-      UPDATE MESS SET
-        MessName = ?, MessType = ?, Location = ?
-      WHERE MessID = ?
-    `, [
-      body.MessName || body.mess_name || body.name || existing.MessName,
-      body.MessType || body.type || body.mess_type || existing.MessType,
-      body.Location || body.location || existing.Location,
-      messId
-    ]);
-
-    if (body.contacts && Array.isArray(body.contacts)) {
-      await execute(`DELETE FROM MESS_CONTACT WHERE MessID = ?`, [messId]);
-      for (const c of body.contacts) {
-        if (c && String(c).trim()) {
-          await execute(`INSERT INTO MESS_CONTACT (MessID, ContactNo) VALUES (?, ?)`, [messId, String(c).trim()]);
-        }
-      }
-    }
+      MATCH (m:Mess {messId: $id})
+      SET m.name = CASE WHEN $name IS NOT NULL THEN $name ELSE m.name END,
+          m.messType = CASE WHEN $messType IS NOT NULL THEN $messType ELSE m.messType END,
+          m.location = CASE WHEN $location IS NOT NULL THEN $location ELSE m.location END,
+          m.contacts = CASE WHEN $contacts IS NOT NULL THEN $contacts ELSE m.contacts END
+    `, {
+      id: messId,
+      name,
+      messType,
+      location,
+      contacts
+    });
 
     res.json({ success: true, message: 'Mess updated successfully' });
   } catch (error) {
@@ -143,7 +174,10 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const messId = req.params.id;
-    await execute(`DELETE FROM MESS WHERE MessID = ?`, [messId]);
+    await execute(`
+      MATCH (m:Mess {messId: $id})
+      DETACH DELETE m
+    `, { id: messId });
     res.json({ success: true, message: 'Mess deleted successfully' });
   } catch (error) {
     console.error('Error deleting mess:', error);

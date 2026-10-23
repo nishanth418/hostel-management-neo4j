@@ -49,7 +49,7 @@ export default function LoginPage({ onLoginSuccess, healthInfo, onBackToIntro })
         email: email.trim(),
         role: email.includes('admin') ? 'Super Admin' : 'Warden',
         loginTime: new Date().toISOString(),
-        engine: health?.engine || 'Aiven Cloud MySQL'
+        engine: health?.engine || 'Neo4j AuraDB'
       };
 
       if (rememberMe) {

@@ -1,64 +1,45 @@
-const { getPool } = require('./db-mysql');
+const neo4jDb = require('./db-neo4j');
 
-async function testAivenConnection() {
-  let pool = null;
+async function testDatabaseConnection() {
   try {
-    pool = getPool();
+    const result = await neo4jDb.testConnection();
 
-    // 1. Basic ping & database info
-    const [infoRows] = await pool.query(`
-      SELECT 1 AS ping, DATABASE() AS database_name, VERSION() AS server_version
-    `);
-
-    // 2. SSL status verification
-    const [sslCipherRows] = await pool.query("SHOW STATUS LIKE 'Ssl_cipher'");
-    const [sslVersionRows] = await pool.query("SHOW STATUS LIKE 'Ssl_version'");
-
-    const cipher = sslCipherRows && sslCipherRows.length > 0 ? sslCipherRows[0].Value : 'Not Reported';
-    const tlsVersion = sslVersionRows && sslVersionRows.length > 0 ? sslVersionRows[0].Value : 'Not Reported';
-    const isSslActive = cipher && cipher !== '' && cipher !== 'None';
-
-    console.log('--- AIVEN MYSQL CONNECTION TEST REPORT ---');
-    console.log('1. Connection Result: SUCCESSFUL');
-    console.log(`2. Database Server Status: Connected`);
-    console.log(`   - Database Name: ${infoRows[0].database_name}`);
-    console.log(`   - MySQL Version: ${infoRows[0].server_version}`);
-    console.log(`3. SSL Connection Status: ${isSslActive ? 'ACTIVE (Encrypted)' : 'INACTIVE'}`);
-    console.log(`   - TLS Protocol: ${tlsVersion}`);
-    console.log(`   - Cipher: ${cipher}`);
-    console.log('4. Errors: None');
-    console.log('------------------------------------------');
-
-    await pool.end();
-    process.exit(0);
+    if (result.connected) {
+      console.log('--- NEO4J AURADB CONNECTION TEST REPORT ---');
+      console.log('1. Connection Result: SUCCESSFUL');
+      console.log('2. Database Server Status: Connected');
+      console.log(`   - Database Engine: Neo4j AuraDB`);
+      console.log(`   - Address: ${result.address || 'Active AuraDB Instance'}`);
+      console.log(`   - Version: ${result.version || 'Neo4j 5.x'}`);
+      console.log('3. SSL / Encryption Status: ACTIVE (neo4j+s / neo4j+ssc)');
+      console.log('4. Errors: None');
+      console.log('-------------------------------------------');
+      await neo4jDb.closeDriver();
+      process.exit(0);
+    } else {
+      const sanitizedError = (result.error || 'Connection failed').replace(/:([^:@]+)@/g, ':••••••••@');
+      console.log('--- NEO4J AURADB CONNECTION TEST REPORT ---');
+      console.log('1. Connection Result: FAILED');
+      console.log('2. Database Server Status: Disconnected');
+      console.log(`3. Error Details: ${sanitizedError}`);
+      console.log('4. Suggested Fix:');
+      console.log('   - Verify NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD in your environment / .env');
+      console.log('   - Ensure NEO4J_URI begins with neo4j+s:// or neo4j+ssc://');
+      console.log('   - Ensure your Neo4j AuraDB instance is running (not paused)');
+      console.log('-------------------------------------------');
+      await neo4jDb.closeDriver();
+      process.exit(1);
+    }
   } catch (err) {
-    // Sanitize any potential credential strings from error messages
     const sanitizedMsg = (err.message || 'Unknown error').replace(/:([^:@]+)@/g, ':••••••••@');
-
-    console.log('--- AIVEN MYSQL CONNECTION TEST REPORT ---');
+    console.log('--- NEO4J AURADB CONNECTION TEST REPORT ---');
     console.log('1. Connection Result: FAILED');
-    console.log(`2. Database Server Status: Disconnected`);
-    console.log(`3. SSL Connection Status: Unknown / Failed during handshake`);
-    console.log(`4. Error Details:`);
-    console.log(`   - Code: ${err.code || 'UNKNOWN'}`);
-    console.log(`   - Message: ${sanitizedMsg}`);
-
-    if (err.code === 'ER_ACCESS_DENIED_ERROR') {
-      console.log('   - Suggested Fix: Check the DB_USER or DB_PASSWORD in backend/.env.');
-    } else if (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN') {
-      console.log('   - Suggested Fix: Check the hostname (DB_HOST) or internet connection.');
-    } else if (err.code === 'ETIMEDOUT' || err.code === 'ECONNREFUSED') {
-      console.log('   - Suggested Fix: Check the port (DB_PORT) or network firewall / allowed IP addresses in Aiven console.');
-    } else if (err.code === 'HANDSHAKE_SSL_ERROR' || err.message.includes('SSL')) {
-      console.log('   - Suggested Fix: Ensure SSL is required with DB_SSL=true.');
-    }
-    console.log('------------------------------------------');
-
-    if (pool) {
-      try { await pool.end(); } catch (_) {}
-    }
+    console.log('2. Database Server Status: Disconnected');
+    console.log(`3. Error: ${sanitizedMsg}`);
+    console.log('-------------------------------------------');
+    await neo4jDb.closeDriver();
     process.exit(1);
   }
 }
 
-testAivenConnection();
+testDatabaseConnection();

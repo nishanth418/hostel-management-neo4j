@@ -3,14 +3,29 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
-const { db, verifyDatabase, getApplicationTables, getHealthStatus } = require('./database');
+const { verifyDatabase, getApplicationTables, getHealthStatus } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// CORS configuration supporting local development, Vercel deployments, and environment overrides
+const defaultOrigins = ['http://localhost:3000', 'http://localhost:5173'];
+const envOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : [];
+const allowedOrigins = [...defaultOrigins, ...envOrigins];
+
 app.use(cors({
-  origin: '*',
+  origin: (origin, callback) => {
+    // Allow non-browser requests (health checks, server-to-server, curl)
+    if (!origin) return callback(null, true);
+    if (
+      allowedOrigins.includes(origin) ||
+      allowedOrigins.includes('*') ||
+      /\.vercel\.app$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS policy blocked request from origin: ${origin}`));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));

@@ -6,26 +6,29 @@ const { query, execute } = require('../database');
 router.get('/', async (req, res) => {
   try {
     const rows = await query(`
-      SELECT 
-        w.WardenID AS warden_id,
-        w.WardenID,
-        w.WardenName AS name,
-        w.WardenName,
-        w.Email AS email,
-        w.Email,
-        w.JoiningDate AS join_date,
-        w.JoiningDate,
-        h.HostelName AS hostel_name,
-        h.HostelID AS hostel_id,
-        GROUP_CONCAT(wp.PhoneNo, ', ') AS phone_numbers
-      FROM WARDEN w
-      LEFT JOIN HOSTEL h ON w.WardenID = h.WardenID
-      LEFT JOIN WARDEN_PHONE wp ON w.WardenID = wp.WardenID
-      GROUP BY w.WardenID, w.WardenName, w.Email, w.JoiningDate, h.HostelName, h.HostelID
-      ORDER BY w.WardenID ASC
+      MATCH (w:Warden)
+      OPTIONAL MATCH (h:Hostel)-[:MANAGED_BY]->(w)
+      RETURN
+        w.wardenId AS warden_id,
+        w.wardenId AS WardenID,
+        w.name AS name,
+        w.name AS WardenName,
+        w.email AS email,
+        w.email AS Email,
+        w.joiningDate AS join_date,
+        w.joiningDate AS JoiningDate,
+        h.name AS hostel_name,
+        h.hostelId AS hostel_id,
+        w.phones AS phones
+      ORDER BY w.wardenId ASC
     `);
 
-    res.json({ success: true, count: rows.length, data: rows });
+    const formatted = rows.map(r => ({
+      ...r,
+      phone_numbers: Array.isArray(r.phones) ? r.phones.join(', ') : (r.phones || '')
+    }));
+
+    res.json({ success: true, count: formatted.length, data: formatted });
   } catch (error) {
     console.error('Error fetching wardens:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -37,29 +40,28 @@ router.get('/:id', async (req, res) => {
   try {
     const wardenId = req.params.id;
     const rows = await query(`
-      SELECT 
-        w.WardenID AS warden_id,
-        w.WardenID,
-        w.WardenName AS name,
-        w.WardenName,
-        w.Email AS email,
-        w.Email,
-        w.JoiningDate AS join_date,
-        w.JoiningDate,
-        h.HostelName AS hostel_name,
-        h.HostelID AS hostel_id
-      FROM WARDEN w
-      LEFT JOIN HOSTEL h ON w.WardenID = h.WardenID
-      WHERE w.WardenID = ?
-    `, [wardenId]);
+      MATCH (w:Warden {wardenId: $id})
+      OPTIONAL MATCH (h:Hostel)-[:MANAGED_BY]->(w)
+      RETURN
+        w.wardenId AS warden_id,
+        w.wardenId AS WardenID,
+        w.name AS name,
+        w.name AS WardenName,
+        w.email AS email,
+        w.email AS Email,
+        w.joiningDate AS join_date,
+        w.joiningDate AS JoiningDate,
+        h.name AS hostel_name,
+        h.hostelId AS hostel_id,
+        w.phones AS phones
+    `, { id: wardenId });
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Warden not found' });
     }
 
     const warden = rows[0];
-    const phoneRows = await query(`SELECT PhoneNo as phone_number FROM WARDEN_PHONE WHERE WardenID = ?`, [wardenId]);
-    const phones = phoneRows.map(p => p.phone_number);
+    const phones = Array.isArray(warden.phones) ? warden.phones : [];
 
     res.json({ success: true, data: { ...warden, phones } });
   } catch (error) {
@@ -78,18 +80,23 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Warden name is required' });
     }
 
-    await execute(`
-      INSERT INTO WARDEN (WardenID, WardenName, Email, JoiningDate)
-      VALUES (?, ?, ?, ?)
-    `, [finalId, finalName, Email || email || '', JoiningDate || join_date || '01-JAN-22']);
+    const phoneList = Array.isArray(phones)
+      ? phones.map(p => String(p).trim()).filter(Boolean)
+      : [];
 
-    if (phones && Array.isArray(phones)) {
-      for (const phone of phones) {
-        if (phone && String(phone).trim()) {
-          await execute(`INSERT INTO WARDEN_PHONE (WardenID, PhoneNo) VALUES (?, ?)`, [finalId, String(phone).trim()]);
-        }
-      }
-    }
+    await execute(`
+      MERGE (w:Warden {wardenId: $wardenId})
+      SET w.name = $name,
+          w.email = $email,
+          w.joiningDate = $joiningDate,
+          w.phones = $phones
+    `, {
+      wardenId: finalId,
+      name: finalName,
+      email: Email || email || '',
+      joiningDate: JoiningDate || join_date || '01-JAN-22',
+      phones: phoneList
+    });
 
     res.status(201).json({ success: true, message: 'Warden created successfully', wardenId: finalId });
   } catch (error) {
@@ -104,31 +111,31 @@ router.put('/:id', async (req, res) => {
     const wardenId = req.params.id;
     const body = req.body || {};
 
-    const existingRows = await query(`SELECT * FROM WARDEN WHERE WardenID = ?`, [wardenId]);
-    if (existingRows.length === 0) {
+    const check = await query(`MATCH (w:Warden {wardenId: $id}) RETURN w`, { id: wardenId });
+    if (check.length === 0) {
       return res.status(404).json({ success: false, message: 'Warden not found' });
     }
-    const existing = existingRows[0];
+
+    const name = body.WardenName || body.name || null;
+    const email = body.Email || body.email || null;
+    const joiningDate = body.JoiningDate || body.join_date || null;
+    const phones = Array.isArray(body.phones)
+      ? body.phones.map(p => String(p).trim()).filter(Boolean)
+      : null;
 
     await execute(`
-      UPDATE WARDEN SET
-        WardenName = ?, Email = ?, JoiningDate = ?
-      WHERE WardenID = ?
-    `, [
-      body.WardenName || body.name || existing.WardenName,
-      body.Email || body.email || existing.Email,
-      body.JoiningDate || body.join_date || existing.JoiningDate,
-      wardenId
-    ]);
-
-    if (body.phones && Array.isArray(body.phones)) {
-      await execute(`DELETE FROM WARDEN_PHONE WHERE WardenID = ?`, [wardenId]);
-      for (const phone of body.phones) {
-        if (phone && String(phone).trim()) {
-          await execute(`INSERT INTO WARDEN_PHONE (WardenID, PhoneNo) VALUES (?, ?)`, [wardenId, String(phone).trim()]);
-        }
-      }
-    }
+      MATCH (w:Warden {wardenId: $id})
+      SET w.name = CASE WHEN $name IS NOT NULL THEN $name ELSE w.name END,
+          w.email = CASE WHEN $email IS NOT NULL THEN $email ELSE w.email END,
+          w.joiningDate = CASE WHEN $joiningDate IS NOT NULL THEN $joiningDate ELSE w.joiningDate END,
+          w.phones = CASE WHEN $phones IS NOT NULL THEN $phones ELSE w.phones END
+    `, {
+      id: wardenId,
+      name,
+      email,
+      joiningDate,
+      phones
+    });
 
     res.json({ success: true, message: 'Warden updated successfully' });
   } catch (error) {
@@ -141,15 +148,24 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const wardenId = req.params.id;
-    const [hostelCount] = await query(`SELECT COUNT(*) AS count FROM HOSTEL WHERE WardenID = ?`, [wardenId]);
-    if (hostelCount && Number(hostelCount.count) > 0) {
+    const check = await query(`
+      MATCH (h:Hostel)-[:MANAGED_BY]->(w:Warden {wardenId: $id})
+      RETURN count(h) AS count
+    `, { id: wardenId });
+
+    const count = check[0] ? Number(check[0].count) : 0;
+    if (count > 0) {
       return res.status(400).json({
         success: false,
-        message: `Cannot delete warden: assigned to ${hostelCount.count} hostel(s). Reassign hostel first.`
+        message: `Cannot delete warden: assigned to ${count} hostel(s). Reassign hostel first.`
       });
     }
 
-    await execute(`DELETE FROM WARDEN WHERE WardenID = ?`, [wardenId]);
+    await execute(`
+      MATCH (w:Warden {wardenId: $id})
+      DETACH DELETE w
+    `, { id: wardenId });
+
     res.json({ success: true, message: 'Warden deleted successfully' });
   } catch (error) {
     console.error('Error deleting warden:', error);

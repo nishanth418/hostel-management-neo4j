@@ -6,21 +6,21 @@ const { query, execute } = require('../database');
 router.get('/', async (req, res) => {
   try {
     const rows = await query(`
-      SELECT 
-        rt.TypeID AS type_id,
-        rt.TypeID,
-        rt.TypeName AS type_name,
-        rt.TypeName,
-        rt.AC_Type AS ac_type,
-        rt.AC_Type,
-        rt.Capacity AS capacity,
-        rt.Capacity,
+      MATCH (rt:RoomType)
+      OPTIONAL MATCH (r:Room)-[:OF_TYPE]->(rt)
+      WITH rt, count(r) AS total_rooms_configured
+      RETURN
+        rt.typeId AS type_id,
+        rt.typeId AS TypeID,
+        rt.typeName AS type_name,
+        rt.typeName AS TypeName,
+        rt.acType AS ac_type,
+        rt.acType AS AC_Type,
+        rt.capacity AS capacity,
+        rt.capacity AS Capacity,
         5000 AS fee_per_month,
-        COUNT(r.RoomNo) AS total_rooms_configured
-      FROM ROOM_TYPE rt
-      LEFT JOIN ROOM r ON (r.Type = rt.TypeName OR r.Type LIKE CONCAT('%', rt.TypeName, '%'))
-      GROUP BY rt.TypeID, rt.TypeName, rt.AC_Type, rt.Capacity
-      ORDER BY rt.TypeID ASC
+        total_rooms_configured
+      ORDER BY rt.typeId ASC
     `);
     res.json({ success: true, count: rows.length, data: rows });
   } catch (error) {
@@ -33,19 +33,18 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const rows = await query(`
-      SELECT 
-        TypeID AS type_id,
-        TypeID,
-        TypeName AS type_name,
-        TypeName,
-        AC_Type AS ac_type,
-        AC_Type,
-        Capacity AS capacity,
-        Capacity,
+      MATCH (rt:RoomType {typeId: $id})
+      RETURN
+        rt.typeId AS type_id,
+        rt.typeId AS TypeID,
+        rt.typeName AS type_name,
+        rt.typeName AS TypeName,
+        rt.acType AS ac_type,
+        rt.acType AS AC_Type,
+        rt.capacity AS capacity,
+        rt.capacity AS Capacity,
         5000 AS fee_per_month
-      FROM ROOM_TYPE 
-      WHERE TypeID = ?
-    `, [req.params.id]);
+    `, { id: req.params.id });
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Room type not found' });
@@ -69,9 +68,16 @@ router.post('/', async (req, res) => {
     }
 
     await execute(`
-      INSERT INTO ROOM_TYPE (TypeID, TypeName, AC_Type, Capacity)
-      VALUES (?, ?, ?, ?)
-    `, [finalId, finalName, AC_Type || ac_type || 'Non-AC', Number(Capacity || capacity || 1)]);
+      MERGE (rt:RoomType {typeId: $typeId})
+      SET rt.typeName = $typeName,
+          rt.acType = $acType,
+          rt.capacity = $capacity
+    `, {
+      typeId: finalId,
+      typeName: finalName,
+      acType: AC_Type || ac_type || 'Non-AC',
+      capacity: Number(Capacity !== undefined ? Capacity : (capacity !== undefined ? capacity : 1))
+    });
 
     res.status(201).json({ success: true, message: 'Room type created successfully', typeId: finalId });
   } catch (error) {
@@ -86,22 +92,26 @@ router.put('/:id', async (req, res) => {
     const typeId = req.params.id;
     const body = req.body || {};
 
-    const existingRows = await query(`SELECT * FROM ROOM_TYPE WHERE TypeID = ?`, [typeId]);
-    if (existingRows.length === 0) {
+    const check = await query(`MATCH (rt:RoomType {typeId: $id}) RETURN rt`, { id: typeId });
+    if (check.length === 0) {
       return res.status(404).json({ success: false, message: 'Room type not found' });
     }
-    const existing = existingRows[0];
+
+    const typeName = body.TypeName || body.type_name || null;
+    const acType = body.AC_Type || body.ac_type || null;
+    const capacityVal = body.Capacity !== undefined ? Number(body.Capacity) : (body.capacity !== undefined ? Number(body.capacity) : null);
 
     await execute(`
-      UPDATE ROOM_TYPE SET
-        TypeName = ?, AC_Type = ?, Capacity = ?
-      WHERE TypeID = ?
-    `, [
-      body.TypeName || body.type_name || existing.TypeName,
-      body.AC_Type || body.ac_type || existing.AC_Type,
-      body.Capacity !== undefined ? Number(body.Capacity) : (body.capacity !== undefined ? Number(body.capacity) : existing.Capacity),
-      typeId
-    ]);
+      MATCH (rt:RoomType {typeId: $id})
+      SET rt.typeName = CASE WHEN $typeName IS NOT NULL THEN $typeName ELSE rt.typeName END,
+          rt.acType = CASE WHEN $acType IS NOT NULL THEN $acType ELSE rt.acType END,
+          rt.capacity = CASE WHEN $capacityVal IS NOT NULL THEN $capacityVal ELSE rt.capacity END
+    `, {
+      id: typeId,
+      typeName,
+      acType,
+      capacityVal
+    });
 
     res.json({ success: true, message: 'Room type updated successfully' });
   } catch (error) {
@@ -114,7 +124,10 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const typeId = req.params.id;
-    await execute(`DELETE FROM ROOM_TYPE WHERE TypeID = ?`, [typeId]);
+    await execute(`
+      MATCH (rt:RoomType {typeId: $id})
+      DETACH DELETE rt
+    `, { id: typeId });
     res.json({ success: true, message: 'Room type deleted successfully' });
   } catch (error) {
     console.error('Error deleting room type:', error);

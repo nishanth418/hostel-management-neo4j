@@ -1,21 +1,13 @@
-// Production Render Backend URL
-const PRODUCTION_BACKEND_URL = 'https://dbsss-backend.onrender.com';
-
 /**
  * Resolves the API base URL:
- * 1. If VITE_API_URL is configured (in env, Vercel dashboard, or .env.production), use it.
- * 2. In production builds (e.g. deployed on Vercel), default to the public Render backend URL.
- * 3. In local development, fall back to '/api' so Vite's dev server proxy routes to localhost:5000.
+ * 1. If VITE_API_URL is configured in environment, use it.
+ * 2. Defaults to '/api' for local development proxy or relative routing.
  */
 function getApiBaseUrl() {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
     const cleanUrl = envUrl.trim().replace(/\/+$/, '');
     return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
-  }
-
-  if (import.meta.env.PROD) {
-    return `${PRODUCTION_BACKEND_URL}/api`;
   }
 
   return '/api';
