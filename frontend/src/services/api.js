@@ -159,8 +159,10 @@ export const api = {
   getReportsList: () => request('/reports'),
   getReportData: (reportKey) => request(`/reports/${reportKey}`),
 
-  // SQL Runner
+  // Cypher & Query Runner
+  executeCypherQuery: (cypher) => request('/query', { method: 'POST', body: { cypher } }),
   executeSqlQuery: (sql) => request('/query', { method: 'POST', body: { sql } }),
+  getGraphSchema: () => request('/query/schema'),
   getSqlSchema: () => request('/query/schema'),
 
   // 18 Database Tables API

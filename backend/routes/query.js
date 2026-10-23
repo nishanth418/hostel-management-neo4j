@@ -142,17 +142,206 @@ const TABLE_SCHEMAS = {
   ]
 };
 
-function isReadQuery(text) {
-  if (/\b(DELETE|DETACH|CREATE|MERGE|SET|REMOVE|DROP)\b/i.test(text)) {
-    return false;
-  }
-  return /^\s*(MATCH|RETURN|CALL|SHOW|WITH|SELECT|EXPLAIN)\b/i.test(text);
+const NODE_LABELS = [
+  { label: 'Student', primaryKey: 'studentId', properties: ['studentId', 'firstName', 'lastName', 'gender', 'dob', 'email', 'bloodGroup', 'allergyInfo', 'planType', 'phones', 'roomNo', 'hostelId', 'messId', 'mentorStudentId'] },
+  { label: 'Hostel', primaryKey: 'hostelId', properties: ['hostelId', 'name', 'totalFloors', 'wardenId'] },
+  { label: 'Room', primaryKey: 'roomNo', properties: ['roomNo', 'floorNo', 'type', 'capacity', 'roomRent', 'hostelId'] },
+  { label: 'RoomType', primaryKey: 'typeId', properties: ['typeId', 'typeName', 'acType', 'capacity'] },
+  { label: 'Warden', primaryKey: 'wardenId', properties: ['wardenId', 'name', 'email', 'joiningDate', 'phones'] },
+  { label: 'Mess', primaryKey: 'messId', properties: ['messId', 'name', 'messType', 'location', 'contacts'] },
+  { label: 'Meal', primaryKey: 'mealId', properties: ['mealId', 'name', 'description', 'cost', 'messId'] },
+  { label: 'Staff', primaryKey: 'staffId', properties: ['staffId', 'name', 'joinDate', 'salary', 'role', 'messId', 'phones'] },
+  { label: 'Supplier', primaryKey: 'supplierId', properties: ['supplierId', 'name', 'phones'] },
+  { label: 'InventoryItem', primaryKey: 'itemId', properties: ['itemId', 'name', 'category', 'unit'] },
+  { label: 'Procurement', primaryKey: 'procureId', properties: ['procureId', 'quantity', 'messId', 'supplierId', 'itemId'] },
+  { label: 'Payment', primaryKey: 'paymentId', properties: ['paymentId', 'studentId', 'amount', 'paymentMode', 'status', 'paymentDay', 'paymentMonth', 'paymentYear'] },
+  { label: 'PaymentDetail', primaryKey: 'id', properties: ['id', 'paymentId', 'detailId', 'month', 'year', 'messCharges', 'otherCharges'] }
+];
+
+const RELATIONSHIPS = [
+  { type: 'MANAGED_BY', source: 'Hostel', target: 'Warden', desc: 'Hostel supervised by presiding warden' },
+  { type: 'LOCATED_IN', source: 'Room', target: 'Hostel', desc: 'Physical room situated inside hostel' },
+  { type: 'OF_TYPE', source: 'Room', target: 'RoomType', desc: 'Room categorized by type & amenities' },
+  { type: 'ALLOCATED_TO', source: 'Student', target: 'Room', desc: 'Student assigned to bed/room' },
+  { type: 'RESIDES_IN', source: 'Student', target: 'Hostel', desc: 'Student assigned to hostel building' },
+  { type: 'ENROLLED_IN', source: 'Student', target: 'Mess', desc: 'Student dining subscription' },
+  { type: 'MENTORED_BY', source: 'Student', target: 'Student', desc: 'Junior resident advised by senior mentor' },
+  { type: 'SERVED_IN', source: 'Meal', target: 'Mess', desc: 'Meal served at dining facility' },
+  { type: 'ASSIGNED_TO', source: 'Staff', target: 'Mess', desc: 'Workforce assigned to mess' },
+  { type: 'PLACED_ORDER', source: 'Mess', target: 'Procurement', desc: 'Mess procuring stock items' },
+  { type: 'SUPPLIED_BY', source: 'Procurement', target: 'Supplier', desc: 'Vendor fulfilling procurement order' },
+  { type: 'INCLUDES_ITEM', source: 'Procurement', target: 'InventoryItem', desc: 'Provision item being supplied' },
+  { type: 'PAID_BY', source: 'Payment', target: 'Student', desc: 'Student responsible for payment' },
+  { type: 'HAS_DETAIL', source: 'Payment', target: 'PaymentDetail', desc: 'Detailed billing breakdown' }
+];
+
+const TABLE_TO_LABEL_MAP = {
+  STUDENT: { label: 'Student', alias: 's' },
+  HOSTEL: { label: 'Hostel', alias: 'h' },
+  ROOM_TYPE: { label: 'RoomType', alias: 'rt' },
+  ROOM: { label: 'Room', alias: 'r' },
+  WARDEN: { label: 'Warden', alias: 'w' },
+  MESS: { label: 'Mess', alias: 'm' },
+  MEAL: { label: 'Meal', alias: 'ml' },
+  STAFF: { label: 'Staff', alias: 'st' },
+  SUPPLIER: { label: 'Supplier', alias: 'sup' },
+  INVENTORY_ITEM: { label: 'InventoryItem', alias: 'i' },
+  PROCUREMENT: { label: 'Procurement', alias: 'p' },
+  PROCURES: { label: 'Procurement', alias: 'p' },
+  PAYMENT: { label: 'Payment', alias: 'pay' },
+  PAYMENT_DETAIL: { label: 'PaymentDetail', alias: 'pd' },
+  STUDENT_PHONE: { label: 'Student', alias: 's' },
+  WARDEN_PHONE: { label: 'Warden', alias: 'w' },
+  STAFF_PHONE: { label: 'Staff', alias: 'st' },
+  SUPPLIER_PHONE: { label: 'Supplier', alias: 'sup' },
+  MESS_CONTACT: { label: 'Mess', alias: 'm' }
+};
+
+function stripComments(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\r\n]*/g, '')
+    .replace(/#[^\r\n]*/g, '')
+    .trim();
 }
 
-// POST /api/query - Execute Cypher / Graph queries
+/**
+ * Translates MySQL-style SQL queries (e.g. SELECT * FROM STUDENT) to Cypher (MATCH (s:Student) RETURN s),
+ * and normalizes uppercase MySQL table names in Cypher queries to proper Neo4j labels.
+ */
+function translateSqlOrNormalizeCypher(rawQuery) {
+  if (!rawQuery || typeof rawQuery !== 'string') return rawQuery;
+  const stripped = stripComments(rawQuery);
+  const trimmed = stripped.trim().replace(/;+\s*$/, '');
+
+  // 1. Check if query is SQL SELECT
+  const selectRegex = /^\s*SELECT\s+([\s\S]+?)\s+FROM\s+([A-Za-z0-9_]+)(?:\s+WHERE\s+([\s\S]+?))?(?:\s+ORDER\s+BY\s+([\s\S]+?))?(?:\s+LIMIT\s+(\d+))?\s*$/i;
+  const match = trimmed.match(selectRegex);
+
+  if (match) {
+    const rawCols = match[1].trim();
+    const rawTable = match[2].trim().toUpperCase();
+    const rawWhere = match[3] ? match[3].trim() : null;
+    const rawOrderBy = match[4] ? match[4].trim() : null;
+    const rawLimit = match[5] ? match[5].trim() : null;
+
+    const mapping = TABLE_TO_LABEL_MAP[rawTable] || {
+      label: rawTable.charAt(0).toUpperCase() + rawTable.slice(1).toLowerCase(),
+      alias: rawTable.charAt(0).toLowerCase()
+    };
+    const { label, alias } = mapping;
+
+    let cypher = `MATCH (${alias}:${label})`;
+
+    if (rawWhere) {
+      let whereClause = rawWhere.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s*(=|!=|<>|<|>|<=|>=|LIKE|IN)\b/gi, (m, col, op) => {
+        if (col.toLowerCase() === alias.toLowerCase() || col.includes('.')) return m;
+        return `${alias}.${col} ${op}`;
+      });
+      cypher += ` WHERE ${whereClause}`;
+    }
+
+    if (rawCols === '*') {
+      cypher += ` RETURN ${alias}`;
+    } else {
+      const cols = rawCols.split(',').map(c => c.trim()).map(c => {
+        if (c.toLowerCase().startsWith(alias.toLowerCase() + '.') || c.includes('(')) return c;
+        return `${alias}.${c}`;
+      }).join(', ');
+      cypher += ` RETURN ${cols}`;
+    }
+
+    if (rawOrderBy) {
+      let orderClause = rawOrderBy.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\b/g, (col) => {
+        if (['ASC', 'DESC'].includes(col.toUpperCase()) || col.includes('.')) return col;
+        return `${alias}.${col}`;
+      });
+      cypher += ` ORDER BY ${orderClause}`;
+    }
+
+    if (rawLimit) {
+      cypher += ` LIMIT ${rawLimit}`;
+    }
+
+    return cypher;
+  }
+
+  // 2. Normalize uppercase table names in Cypher queries: e.g. (:STUDENT) -> (:Student)
+  let normalized = trimmed;
+  for (const [table, { label }] of Object.entries(TABLE_TO_LABEL_MAP)) {
+    const labelRegex = new RegExp(`(:\\s*)${table}(\\b)`, 'gi');
+    normalized = normalized.replace(labelRegex, `$1${label}$2`);
+  }
+
+  return normalized;
+}
+
+function unwrapRecords(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { rows: [], columns: [] };
+  }
+
+  const firstRow = rows[0];
+  const keys = Object.keys(firstRow);
+
+  // If a single column was returned and its value in all rows is an object/Node
+  if (keys.length === 1) {
+    const colKey = keys[0];
+    const isSingleObjectCol = rows.every(
+      r => r && typeof r[colKey] === 'object' && r[colKey] !== null && !Array.isArray(r[colKey])
+    );
+
+    if (isSingleObjectCol) {
+      const propKeys = [];
+      rows.forEach(r => {
+        const obj = r[colKey] || {};
+        Object.keys(obj).forEach(pk => {
+          if (!pk.startsWith('__') && !pk.startsWith('_') && !propKeys.includes(pk)) {
+            propKeys.push(pk);
+          }
+        });
+      });
+
+      const unwrappedRows = rows.map(r => {
+        const obj = r[colKey] || {};
+        const unwrapped = {};
+        propKeys.forEach(pk => {
+          unwrapped[pk] = obj[pk] !== undefined ? obj[pk] : null;
+        });
+        return unwrapped;
+      });
+
+      return {
+        columns: propKeys,
+        rows: unwrappedRows
+      };
+    }
+  }
+
+  return {
+    columns: keys,
+    rows
+  };
+}
+
+function isReadQuery(text) {
+  const clean = stripComments(text);
+  // Mutating Cypher keywords indicate write transaction
+  if (/\b(DELETE|DETACH|CREATE|MERGE|SET|REMOVE|DROP)\b/i.test(clean)) {
+    return false;
+  }
+  // Read and introspection operations
+  if (/^\s*(MATCH|OPTIONAL\s+MATCH|RETURN|WITH|UNWIND|CALL|SHOW|EXPLAIN|PROFILE|SELECT)\b/i.test(clean)) {
+    return true;
+  }
+  return true;
+}
+
+// POST /api/query - Execute Cypher / Graph queries (with SQL translation support)
 router.post('/', async (req, res) => {
   try {
-    const rawQuery = req.body.sql || req.body.cypher || req.body.query;
+    const rawQuery = req.body.cypher || req.body.query || req.body.sql;
     if (!rawQuery || typeof rawQuery !== 'string' || !rawQuery.trim()) {
       return res.status(400).json({
         success: false,
@@ -161,23 +350,24 @@ router.post('/', async (req, res) => {
       });
     }
 
-    const cleanQuery = rawQuery.trim().replace(/;+$/, '');
+    // Translate SQL (e.g. SELECT * FROM STUDENT) to Cypher (MATCH (s:Student) RETURN s)
+    // or normalize uppercase table names in Cypher queries
+    const cypherQuery = translateSqlOrNormalizeCypher(rawQuery);
+    const cleanQuery = cypherQuery.trim().replace(/;+$/, '');
     const startTime = process.hrtime();
 
     if (isReadQuery(cleanQuery)) {
-      const rows = await query(cleanQuery);
+      const rawRows = await query(cleanQuery);
       const diff = process.hrtime(startTime);
       const executionTimeMs = (diff[0] * 1000 + diff[1] / 1e6).toFixed(2);
 
-      let columns = [];
-      if (Array.isArray(rows) && rows.length > 0 && typeof rows[0] === 'object' && rows[0] !== null) {
-        columns = Object.keys(rows[0]);
-      }
+      const { columns, rows } = unwrapRecords(rawRows);
 
       return res.json({
         success: true,
         type: 'READ',
         query: cleanQuery,
+        originalQuery: rawQuery.trim(),
         count: Array.isArray(rows) ? rows.length : 0,
         columns,
         rows: Array.isArray(rows) ? rows : [],
@@ -190,12 +380,29 @@ router.post('/', async (req, res) => {
     const diff = process.hrtime(startTime);
     const executionTimeMs = (diff[0] * 1000 + diff[1] / 1e6).toFixed(2);
 
+    const rawRows = Array.isArray(result.rows) ? result.rows : [];
+    const { columns, rows } = unwrapRecords(rawRows);
+
+    const summary = result.summary || {};
+    const totalChanges =
+      (summary.nodesCreated || 0) +
+      (summary.nodesDeleted || 0) +
+      (summary.relationshipsCreated || 0) +
+      (summary.relationshipsDeleted || 0) +
+      (summary.propertiesSet || 0);
+
     return res.json({
       success: true,
       type: 'WRITE',
       query: cleanQuery,
-      changes: 1,
-      message: 'Cypher write operation executed successfully.',
+      originalQuery: rawQuery.trim(),
+      changes: totalChanges || 1,
+      count: rows.length,
+      columns,
+      rows,
+      data: rows,
+      summary,
+      message: `Cypher write operation executed successfully.${totalChanges > 0 ? ` (${totalChanges} change${totalChanges === 1 ? '' : 's'})` : ''}`,
       executionTimeMs
     });
   } catch (error) {
@@ -208,10 +415,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET /api/query/schema - Schema reference for Studio
+// GET /api/query/schema - Schema reference for Studio (Tables, Node Labels, Relationships)
 router.get('/schema', async (req, res) => {
   try {
-    res.json({ success: true, tables: TABLE_SCHEMAS });
+    res.json({
+      success: true,
+      tables: TABLE_SCHEMAS,
+      nodeLabels: NODE_LABELS,
+      relationships: RELATIONSHIPS
+    });
   } catch (error) {
     console.error('Error fetching schema for query studio:', error);
     res.status(500).json({ success: false, error: error.message, message: error.message });

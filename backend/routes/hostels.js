@@ -148,7 +148,7 @@ router.put('/:id', async (req, res) => {
 
     const finalName = HostelName || name || existing.name;
     const finalFloors = TotalFloors !== undefined ? Number(TotalFloors) : (total_floors !== undefined ? Number(total_floors) : Number(existing.totalFloors));
-    const finalWardenId = WardenID !== undefined ? WardenID : (warden_id !== undefined ? warden_id : existing.wardenId);
+    const finalWardenId = (WardenID !== undefined ? WardenID : (warden_id !== undefined ? warden_id : existing.wardenId)) ?? null;
 
     const updateCypher = `
       MATCH (h:Hostel {hostelId: $hostelId})

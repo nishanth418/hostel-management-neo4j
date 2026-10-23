@@ -8,7 +8,8 @@
     "init-db": "node init-neo4j.js",
     "verify-db": "node verify-database.js",
     "test-connection": "node test-connection.js",
-    "test-api": "node test-endpoints-and-crud.js"
+    "test-api": "node test-endpoints-and-crud.js",
+    "test-cypher": "node test-cypher-queries.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

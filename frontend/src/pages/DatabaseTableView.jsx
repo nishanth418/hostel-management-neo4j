@@ -336,6 +336,10 @@ export default function DatabaseTableView({ tableName, showToast }) {
                         >
                           {isNull ? (
                             <span style={{ color: '#f87171', fontStyle: 'italic', fontSize: '0.74rem' }}>NULL</span>
+                          ) : Array.isArray(val) ? (
+                            val.join(', ')
+                          ) : typeof val === 'object' ? (
+                            JSON.stringify(val)
                           ) : (
                             String(val)
                           )}

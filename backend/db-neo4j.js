@@ -51,8 +51,25 @@ function toNative(val) {
   if (Array.isArray(val)) {
     return val.map(toNative);
   }
-  if (neo4j.isNode(val) || neo4j.isRelationship(val)) {
-    return toNative(val.properties);
+  if (neo4j.isNode(val)) {
+    const props = toNative(val.properties) || {};
+    const id = val.identity ? (neo4j.isInt(val.identity) ? (val.identity.inSafeRange() ? val.identity.toNumber() : val.identity.toString()) : val.identity) : val.elementId;
+    return {
+      _type: 'Node',
+      _labels: val.labels,
+      _id: id,
+      ...props
+    };
+  }
+  if (neo4j.isRelationship(val)) {
+    const props = toNative(val.properties) || {};
+    const id = val.identity ? (neo4j.isInt(val.identity) ? (val.identity.inSafeRange() ? val.identity.toNumber() : val.identity.toString()) : val.identity) : val.elementId;
+    return {
+      _type: 'Relationship',
+      _relType: val.type,
+      _id: id,
+      ...props
+    };
   }
   if (typeof val === 'object') {
     // Neo4j Date, DateTime, LocalDateTime objects
