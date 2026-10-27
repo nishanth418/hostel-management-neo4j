@@ -26,7 +26,7 @@ const TAB_TITLES = {
   procurement: 'Procurement Records',
   payments: 'Student Fee Payments',
   reports: 'Analytical Reports (13 Views)',
-  'sql-query': 'Cypher Studio & Query Console',
+  'sql-query': 'SQL Studio & Query Engine',
   settings: 'System & Theme Settings',
   privacy: 'Privacy Policy',
   terms: 'Terms of Service'

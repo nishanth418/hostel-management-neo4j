@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query, execute } = require('../database');
+const { translateSqlToCypher, ENTITIES } = require('../sql-to-cypher');
 
 const REQUIRED_TABLES = [
   'WARDEN',
@@ -338,10 +339,10 @@ function isReadQuery(text) {
   return true;
 }
 
-// POST /api/query - Execute Cypher / Graph queries (with SQL translation support)
+// POST /api/query - Execute SQL Studio queries (with SQL-to-Cypher translation)
 router.post('/', async (req, res) => {
   try {
-    const rawQuery = req.body.cypher || req.body.query || req.body.sql;
+    const rawQuery = req.body.sql || req.body.query || req.body.cypher;
     if (!rawQuery || typeof rawQuery !== 'string' || !rawQuery.trim()) {
       return res.status(400).json({
         success: false,
@@ -350,14 +351,15 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Translate SQL (e.g. SELECT * FROM STUDENT) to Cypher (MATCH (s:Student) RETURN s)
-    // or normalize uppercase table names in Cypher queries
-    const cypherQuery = translateSqlOrNormalizeCypher(rawQuery);
-    const cleanQuery = cypherQuery.trim().replace(/;+$/, '');
+    const stripped = stripComments(rawQuery);
+    const translation = translateSqlToCypher(stripped);
+    const cleanQuery = translation.cypher.trim().replace(/;+$/, '');
+    const params = translation.params || {};
+    const queryType = translation.type || (isReadQuery(cleanQuery) ? 'READ' : 'WRITE');
     const startTime = process.hrtime();
 
-    if (isReadQuery(cleanQuery)) {
-      const rawRows = await query(cleanQuery);
+    if (queryType === 'READ') {
+      const rawRows = await query(cleanQuery, params);
       const diff = process.hrtime(startTime);
       const executionTimeMs = (diff[0] * 1000 + diff[1] / 1e6).toFixed(2);
 
@@ -366,8 +368,12 @@ router.post('/', async (req, res) => {
       return res.json({
         success: true,
         type: 'READ',
-        query: cleanQuery,
+        sql: rawQuery.trim(),
         originalQuery: rawQuery.trim(),
+        query: cleanQuery,
+        cypher: cleanQuery,
+        generatedCypher: cleanQuery,
+        params,
         count: Array.isArray(rows) ? rows.length : 0,
         columns,
         rows: Array.isArray(rows) ? rows : [],
@@ -376,7 +382,7 @@ router.post('/', async (req, res) => {
       });
     }
 
-    const result = await execute(cleanQuery);
+    const result = await execute(cleanQuery, params);
     const diff = process.hrtime(startTime);
     const executionTimeMs = (diff[0] * 1000 + diff[1] / 1e6).toFixed(2);
 
@@ -394,15 +400,19 @@ router.post('/', async (req, res) => {
     return res.json({
       success: true,
       type: 'WRITE',
-      query: cleanQuery,
+      sql: rawQuery.trim(),
       originalQuery: rawQuery.trim(),
+      query: cleanQuery,
+      cypher: cleanQuery,
+      generatedCypher: cleanQuery,
+      params,
       changes: totalChanges || 1,
       count: rows.length,
       columns,
       rows,
       data: rows,
       summary,
-      message: `Cypher write operation executed successfully.${totalChanges > 0 ? ` (${totalChanges} change${totalChanges === 1 ? '' : 's'})` : ''}`,
+      message: `SQL operation executed successfully.${totalChanges > 0 ? ` (${totalChanges} change${totalChanges === 1 ? '' : 's'})` : ''}`,
       executionTimeMs
     });
   } catch (error) {
@@ -410,19 +420,21 @@ router.post('/', async (req, res) => {
     return res.status(400).json({
       success: false,
       error: error.message,
-      message: error.message
+      message: error.message,
+      sql: req.body.sql || req.body.query || req.body.cypher
     });
   }
 });
 
-// GET /api/query/schema - Schema reference for Studio (Tables, Node Labels, Relationships)
+// GET /api/query/schema - Schema reference for SQL Studio (Tables, Node Labels, Relationships, Entities)
 router.get('/schema', async (req, res) => {
   try {
     res.json({
       success: true,
       tables: TABLE_SCHEMAS,
       nodeLabels: NODE_LABELS,
-      relationships: RELATIONSHIPS
+      relationships: RELATIONSHIPS,
+      entities: ENTITIES
     });
   } catch (error) {
     console.error('Error fetching schema for query studio:', error);

@@ -29,7 +29,7 @@ export const NAVIGATION_SECTIONS = [
     title: 'OVERVIEW',
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { id: 'sql-query', label: 'Cypher Studio', icon: Terminal }
+      { id: 'sql-query', label: 'SQL Studio', icon: Terminal }
     ]
   },
   {

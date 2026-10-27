@@ -9,12 +9,14 @@
     "verify-db": "node verify-database.js",
     "test-connection": "node test-connection.js",
     "test-api": "node test-endpoints-and-crud.js",
-    "test-cypher": "node test-cypher-queries.js"
+    "test-cypher": "node test-cypher-queries.js",
+    "test-sql": "node test-sql-studio.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "neo4j-driver": "^6.2.0"
+    "neo4j-driver": "^6.2.0",
+    "node-sql-parser": "^5.4.0"
   }
 }

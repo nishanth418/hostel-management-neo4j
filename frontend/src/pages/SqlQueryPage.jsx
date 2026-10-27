@@ -8,244 +8,299 @@ import {
   RefreshCw,
   Trash2,
   Code2,
-  Network
+  Network,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Check,
+  Table2,
+  Layers,
+  ShieldAlert
 } from 'lucide-react';
 import { api } from '../services/api';
 
 const EXACT_18_TABLES = [
-  'WARDEN',
-  'WARDEN_PHONE',
-  'HOSTEL',
-  'ROOM_TYPE',
-  'ROOM',
   'STUDENT',
-  'STUDENT_PHONE',
+  'HOSTEL',
+  'ROOM',
+  'ROOM_TYPE',
+  'WARDEN',
   'MESS',
-  'MESS_CONTACT',
   'MEAL',
   'STAFF',
-  'STAFF_PHONE',
   'SUPPLIER',
-  'SUPPLIER_PHONE',
   'INVENTORY_ITEM',
   'PROCURES',
   'PAYMENT',
-  'PAYMENT_DETAIL'
+  'PAYMENT_DETAIL',
+  'STUDENT_PHONE',
+  'WARDEN_PHONE',
+  'STAFF_PHONE',
+  'SUPPLIER_PHONE',
+  'MESS_CONTACT'
 ];
 
 const GRAPH_NODES = [
-  { label: 'Student', alias: 's', key: 'studentId', query: 'MATCH (s:Student)\nRETURN s;' },
-  { label: 'Hostel', alias: 'h', key: 'hostelId', query: 'MATCH (h:Hostel)\nRETURN h;' },
-  { label: 'Room', alias: 'r', key: 'roomNo', query: 'MATCH (r:Room)\nRETURN r;' },
-  { label: 'RoomType', alias: 'rt', key: 'typeId', query: 'MATCH (rt:RoomType)\nRETURN rt;' },
-  { label: 'Warden', alias: 'w', key: 'wardenId', query: 'MATCH (w:Warden)\nRETURN w;' },
-  { label: 'Mess', alias: 'm', key: 'messId', query: 'MATCH (m:Mess)\nRETURN m;' },
-  { label: 'Meal', alias: 'ml', key: 'mealId', query: 'MATCH (ml:Meal)\nRETURN ml;' },
-  { label: 'Staff', alias: 'st', key: 'staffId', query: 'MATCH (st:Staff)\nRETURN st;' },
-  { label: 'Supplier', alias: 'sup', key: 'supplierId', query: 'MATCH (sup:Supplier)\nRETURN sup;' },
-  { label: 'InventoryItem', alias: 'i', key: 'itemId', query: 'MATCH (i:InventoryItem)\nRETURN i;' },
-  { label: 'Procurement', alias: 'p', key: 'procureId', query: 'MATCH (p:Procurement)\nRETURN p;' },
-  { label: 'Payment', alias: 'pay', key: 'paymentId', query: 'MATCH (pay:Payment)\nRETURN pay;' },
-  { label: 'PaymentDetail', alias: 'pd', key: 'id', query: 'MATCH (pd:PaymentDetail)\nRETURN pd;' }
+  { label: 'Student', alias: 's', key: 'studentId', query: 'SELECT * FROM Student;' },
+  { label: 'Hostel', alias: 'h', key: 'hostelId', query: 'SELECT * FROM Hostel;' },
+  { label: 'Room', alias: 'r', key: 'roomNo', query: 'SELECT * FROM Room;' },
+  { label: 'RoomType', alias: 'rt', key: 'typeId', query: 'SELECT * FROM RoomType;' },
+  { label: 'Warden', alias: 'w', key: 'wardenId', query: 'SELECT * FROM Warden;' },
+  { label: 'Mess', alias: 'm', key: 'messId', query: 'SELECT * FROM Mess;' },
+  { label: 'Meal', alias: 'ml', key: 'mealId', query: 'SELECT * FROM Meal;' },
+  { label: 'Staff', alias: 'st', key: 'staffId', query: 'SELECT * FROM Staff;' },
+  { label: 'Supplier', alias: 'sup', key: 'supplierId', query: 'SELECT * FROM Supplier;' },
+  { label: 'InventoryItem', alias: 'i', key: 'itemId', query: 'SELECT * FROM InventoryItem;' },
+  { label: 'Procurement', alias: 'p', key: 'procureId', query: 'SELECT * FROM Procurement;' },
+  { label: 'Payment', alias: 'pay', key: 'paymentId', query: 'SELECT * FROM Payment;' },
+  { label: 'PaymentDetail', alias: 'pd', key: 'id', query: 'SELECT * FROM PaymentDetail;' }
 ];
 
 const GRAPH_RELATIONSHIPS = [
-  { type: 'ALLOCATED_TO', source: 'Student', target: 'Room', query: 'MATCH (s:Student)-[:ALLOCATED_TO]->(r:Room)\nRETURN s, r;' },
-  { type: 'RESIDES_IN', source: 'Student', target: 'Hostel', query: 'MATCH (s:Student)-[:RESIDES_IN]->(h:Hostel)\nRETURN s, h;' },
-  { type: 'ENROLLED_IN', source: 'Student', target: 'Mess', query: 'MATCH (s:Student)-[:ENROLLED_IN]->(m:Mess)\nRETURN s, m;' },
-  { type: 'MENTORED_BY', source: 'Student', target: 'Student', query: 'MATCH (s:Student)-[:MENTORED_BY]->(mentor:Student)\nRETURN s, mentor;' },
-  { type: 'MANAGED_BY', source: 'Hostel', target: 'Warden', query: 'MATCH (h:Hostel)-[:MANAGED_BY]->(w:Warden)\nRETURN h, w;' },
-  { type: 'LOCATED_IN', source: 'Room', target: 'Hostel', query: 'MATCH (r:Room)-[:LOCATED_IN]->(h:Hostel)\nRETURN r, h;' },
-  { type: 'OF_TYPE', source: 'Room', target: 'RoomType', query: 'MATCH (r:Room)-[:OF_TYPE]->(rt:RoomType)\nRETURN r, rt;' },
-  { type: 'SERVED_IN', source: 'Meal', target: 'Mess', query: 'MATCH (ml:Meal)-[:SERVED_IN]->(m:Mess)\nRETURN ml, m;' },
-  { type: 'ASSIGNED_TO', source: 'Staff', target: 'Mess', query: 'MATCH (st:Staff)-[:ASSIGNED_TO]->(m:Mess)\nRETURN st, m;' },
-  { type: 'PLACED_ORDER', source: 'Mess', target: 'Procurement', query: 'MATCH (m:Mess)-[:PLACED_ORDER]->(p:Procurement)\nRETURN m, p;' },
-  { type: 'SUPPLIED_BY', source: 'Procurement', target: 'Supplier', query: 'MATCH (p:Procurement)-[:SUPPLIED_BY]->(sup:Supplier)\nRETURN p, sup;' },
-  { type: 'INCLUDES_ITEM', source: 'Procurement', target: 'InventoryItem', query: 'MATCH (p:Procurement)-[:INCLUDES_ITEM]->(i:InventoryItem)\nRETURN p, i;' },
-  { type: 'PAID_BY', source: 'Payment', target: 'Student', query: 'MATCH (p:Payment)-[:PAID_BY]->(s:Student)\nRETURN p, s;' },
-  { type: 'HAS_DETAIL', source: 'Payment', target: 'PaymentDetail', query: 'MATCH (p:Payment)-[:HAS_DETAIL]->(pd:PaymentDetail)\nRETURN p, pd;' }
+  {
+    type: 'ALLOCATED_TO',
+    source: 'Student',
+    target: 'Room',
+    desc: 'Student assigned to bed/room',
+    query: 'SELECT s.firstName, s.lastName, r.roomNo, r.type FROM Student s JOIN Room r ON s.roomNo = r.roomNo;'
+  },
+  {
+    type: 'RESIDES_IN',
+    source: 'Student',
+    target: 'Hostel',
+    desc: 'Resident assigned to hostel tower',
+    query: 'SELECT s.firstName, s.lastName, h.name AS hostel FROM Student s JOIN Hostel h ON s.hostelId = h.hostelId;'
+  },
+  {
+    type: 'ENROLLED_IN',
+    source: 'Student',
+    target: 'Mess',
+    desc: 'Student dining subscription',
+    query: 'SELECT s.firstName, s.lastName, m.name AS messName FROM Student s JOIN Mess m ON s.messId = m.messId;'
+  },
+  {
+    type: 'MENTORED_BY',
+    source: 'Student',
+    target: 'Student',
+    desc: 'Senior student mentor guidance',
+    query: 'SELECT s1.firstName AS mentee, s2.firstName AS mentor FROM Student s1 JOIN Student s2 ON s1.mentorStudentId = s2.studentId;'
+  },
+  {
+    type: 'MANAGED_BY',
+    source: 'Hostel',
+    target: 'Warden',
+    desc: 'Hostel block supervised by Warden',
+    query: 'SELECT h.name AS hostel, w.name AS warden, w.email FROM Hostel h JOIN Warden w ON h.wardenId = w.wardenId;'
+  },
+  {
+    type: 'LOCATED_IN',
+    source: 'Room',
+    target: 'Hostel',
+    desc: 'Room situated inside hostel building',
+    query: 'SELECT r.roomNo, r.floorNo, h.name AS hostel FROM Room r JOIN Hostel h ON r.hostelId = h.hostelId;'
+  },
+  {
+    type: 'OF_TYPE',
+    source: 'Room',
+    target: 'RoomType',
+    desc: 'Room categorized by amenities',
+    query: 'SELECT r.roomNo, rt.typeName, rt.acType, r.roomRent FROM Room r JOIN RoomType rt ON r.type = rt.typeName;'
+  },
+  {
+    type: 'SERVED_IN',
+    source: 'Meal',
+    target: 'Mess',
+    desc: 'Meal served at dining facility',
+    query: 'SELECT ml.name AS meal, ml.cost, m.name AS mess FROM Meal ml JOIN Mess m ON ml.messId = m.messId;'
+  },
+  {
+    type: 'ASSIGNED_TO',
+    source: 'Staff',
+    target: 'Mess',
+    desc: 'Workforce assigned to dining facility',
+    query: 'SELECT st.name AS staffName, st.role, m.name AS messName FROM Staff st JOIN Mess m ON st.messId = m.messId;'
+  },
+  {
+    type: 'PLACED_ORDER',
+    source: 'Mess',
+    target: 'Procurement',
+    desc: 'Mess purchasing provision stock',
+    query: 'SELECT m.name AS mess, p.quantity, p.itemId FROM Mess m JOIN Procurement p ON m.messId = p.messId;'
+  },
+  {
+    type: 'SUPPLIED_BY',
+    source: 'Procurement',
+    target: 'Supplier',
+    desc: 'Vendor fulfilling supply order',
+    query: 'SELECT p.procureId, p.quantity, sup.name AS supplier FROM Procurement p JOIN Supplier sup ON p.supplierId = sup.supplierId;'
+  },
+  {
+    type: 'INCLUDES_ITEM',
+    source: 'Procurement',
+    target: 'InventoryItem',
+    desc: 'Stock item included in procurement',
+    query: 'SELECT p.procureId, i.name AS itemName, i.unit, p.quantity FROM Procurement p JOIN InventoryItem i ON p.itemId = i.itemId;'
+  },
+  {
+    type: 'PAID_BY',
+    source: 'Payment',
+    target: 'Student',
+    desc: 'Fee transaction billed to resident',
+    query: 'SELECT p.paymentId, p.amount, p.status, s.firstName, s.lastName FROM Payment p JOIN Student s ON p.studentId = s.studentId;'
+  },
+  {
+    type: 'HAS_DETAIL',
+    source: 'Payment',
+    target: 'PaymentDetail',
+    desc: 'Fee sub-ledger billing breakdown',
+    query: 'SELECT p.paymentId, pd.month, pd.year, pd.messCharges, pd.otherCharges FROM Payment p JOIN PaymentDetail pd ON p.paymentId = pd.paymentId;'
+  }
 ];
 
-const TABLE_TO_LABEL_MAP = {
-  STUDENT: { label: 'Student', alias: 's' },
-  HOSTEL: { label: 'Hostel', alias: 'h' },
-  ROOM_TYPE: { label: 'RoomType', alias: 'rt' },
-  ROOM: { label: 'Room', alias: 'r' },
-  WARDEN: { label: 'Warden', alias: 'w' },
-  MESS: { label: 'Mess', alias: 'm' },
-  MEAL: { label: 'Meal', alias: 'ml' },
-  STAFF: { label: 'Staff', alias: 'st' },
-  SUPPLIER: { label: 'Supplier', alias: 'sup' },
-  INVENTORY_ITEM: { label: 'InventoryItem', alias: 'i' },
-  PROCUREMENT: { label: 'Procurement', alias: 'p' },
-  PROCURES: { label: 'Procurement', alias: 'p' },
-  PAYMENT: { label: 'Payment', alias: 'pay' },
-  PAYMENT_DETAIL: { label: 'PaymentDetail', alias: 'pd' },
-  STUDENT_PHONE: { label: 'Student', alias: 's' },
-  WARDEN_PHONE: { label: 'Warden', alias: 'w' },
-  STAFF_PHONE: { label: 'Staff', alias: 'st' },
-  SUPPLIER_PHONE: { label: 'Supplier', alias: 'sup' },
-  MESS_CONTACT: { label: 'Mess', alias: 'm' }
-};
-
-const TABLE_CYPHER_MAP = {
-  STUDENT: 'MATCH (s:Student)\nRETURN s;',
-  HOSTEL: 'MATCH (h:Hostel)\nRETURN h;',
-  ROOM: 'MATCH (r:Room)\nRETURN r;',
-  ROOM_TYPE: 'MATCH (rt:RoomType)\nRETURN rt;',
-  WARDEN: 'MATCH (w:Warden)\nRETURN w;',
-  MESS: 'MATCH (m:Mess)\nRETURN m;',
-  MEAL: 'MATCH (ml:Meal)\nRETURN ml;',
-  STAFF: 'MATCH (st:Staff)\nRETURN st;',
-  SUPPLIER: 'MATCH (sup:Supplier)\nRETURN sup;',
-  INVENTORY_ITEM: 'MATCH (i:InventoryItem)\nRETURN i;',
-  PROCUREMENT: 'MATCH (p:Procurement)\nRETURN p;',
-  PROCURES: 'MATCH (p:Procurement)\nRETURN p;',
-  PAYMENT: 'MATCH (pay:Payment)\nRETURN pay;',
-  PAYMENT_DETAIL: 'MATCH (pd:PaymentDetail)\nRETURN pd;',
-  STUDENT_PHONE: 'MATCH (s:Student)\nUNWIND s.phones AS phone\nRETURN s.studentId AS studentId, phone;',
-  WARDEN_PHONE: 'MATCH (w:Warden)\nUNWIND w.phones AS phone\nRETURN w.wardenId AS wardenId, phone;',
-  STAFF_PHONE: 'MATCH (st:Staff)\nUNWIND st.phones AS phone\nRETURN st.staffId AS staffId, phone;',
-  SUPPLIER_PHONE: 'MATCH (sup:Supplier)\nUNWIND sup.phones AS phone\nRETURN sup.supplierId AS supplierId, phone;',
-  MESS_CONTACT: 'MATCH (m:Mess)\nUNWIND m.contacts AS contact\nRETURN m.messId AS messId, contact;'
-};
-
-const CYPHER_CATEGORIES = [
+const SQL_CATEGORIES = [
   'All',
-  'SQL (MySQL)',
-  'MATCH',
-  'Relationships',
-  'Aggregation',
-  'Create / Update',
-  'Delete'
+  'Basic SELECT',
+  'Filtering (WHERE)',
+  'Joins & Relations',
+  'Aggregations',
+  'INSERT',
+  'UPDATE',
+  'DELETE'
 ];
 
 const QUICK_COMMANDS = [
-  // SQL (MySQL Compatibility)
+  // Basic SELECT
   {
-    category: 'SQL (MySQL)',
-    label: 'SELECT * FROM STUDENT',
-    cypher: 'SELECT * FROM STUDENT;'
+    category: 'Basic SELECT',
+    label: 'SELECT * FROM Student',
+    sql: 'SELECT * FROM Student;'
   },
   {
-    category: 'SQL (MySQL)',
-    label: 'SELECT * FROM HOSTEL',
-    cypher: 'SELECT * FROM HOSTEL;'
+    category: 'Basic SELECT',
+    label: 'SELECT * FROM Hostel',
+    sql: 'SELECT * FROM Hostel;'
   },
   {
-    category: 'SQL (MySQL)',
-    label: 'SELECT * FROM ROOM',
-    cypher: 'SELECT * FROM ROOM;'
+    category: 'Basic SELECT',
+    label: 'SELECT * FROM Room',
+    sql: 'SELECT * FROM Room;'
   },
   {
-    category: 'SQL (MySQL)',
-    label: 'SELECT * FROM WARDEN',
-    cypher: 'SELECT * FROM WARDEN;'
+    category: 'Basic SELECT',
+    label: 'SELECT * FROM Warden',
+    sql: 'SELECT * FROM Warden;'
   },
   {
-    category: 'SQL (MySQL)',
-    label: 'SELECT * FROM MESS',
-    cypher: 'SELECT * FROM MESS;'
+    category: 'Basic SELECT',
+    label: 'SELECT * FROM Mess',
+    sql: 'SELECT * FROM Mess;'
   },
   {
-    category: 'SQL (MySQL)',
-    label: 'SELECT * FROM PAYMENT',
-    cypher: 'SELECT * FROM PAYMENT;'
-  },
-
-  // MATCH
-  {
-    category: 'MATCH',
-    label: 'Basic MATCH',
-    cypher: 'MATCH (s:Student)\nRETURN s;'
+    category: 'Basic SELECT',
+    label: 'SELECT * FROM Payment',
+    sql: 'SELECT * FROM Payment;'
   },
   {
-    category: 'MATCH',
-    label: 'Hostels & Wardens',
-    cypher: 'MATCH (h:Hostel)\nRETURN h.hostelId AS hostelId, h.name AS name, h.totalFloors AS floors\nORDER BY h.hostelId ASC;'
-  },
-  {
-    category: 'MATCH',
-    label: 'Wardens & Contact',
-    cypher: 'MATCH (w:Warden)\nRETURN w.wardenId AS id, w.name AS name, w.email AS email, w.phones AS phones;'
-  },
-  {
-    category: 'MATCH',
-    label: 'Mess Facilities',
-    cypher: 'MATCH (m:Mess)\nRETURN m.messId AS id, m.name AS name, m.messType AS type, m.location AS location;'
+    category: 'Basic SELECT',
+    label: 'SELECT * FROM STUDENT_PHONE',
+    sql: 'SELECT * FROM STUDENT_PHONE;'
   },
 
-  // Relationships
+  // Filtering (WHERE)
   {
-    category: 'Relationships',
-    label: 'Students and rooms',
-    cypher: 'MATCH (s:Student)-[:ALLOCATED_TO]->(r:Room)\nRETURN s, r;'
+    category: 'Filtering (WHERE)',
+    label: 'Male Students',
+    sql: "SELECT firstName, lastName, roomNo FROM Student WHERE gender = 'Male';"
   },
   {
-    category: 'Relationships',
-    label: 'Hostel and warden',
-    cypher: 'MATCH (h:Hostel)-[:MANAGED_BY]->(w:Warden)\nRETURN h, w;'
+    category: 'Filtering (WHERE)',
+    label: 'Budget Rooms (Rent <= 8000)',
+    sql: 'SELECT roomNo, floorNo, type, roomRent FROM Room WHERE roomRent <= 8000 ORDER BY roomRent ASC;'
   },
   {
-    category: 'Relationships',
-    label: 'Students and mess',
-    cypher: 'MATCH (s:Student)-[:ENROLLED_IN]->(m:Mess)\nRETURN s, m;'
+    category: 'Filtering (WHERE)',
+    label: 'Rent Between 5k and 10k',
+    sql: 'SELECT roomNo, floorNo, type, roomRent FROM Room WHERE roomRent BETWEEN 5000 AND 10000;'
   },
   {
-    category: 'Relationships',
-    label: 'Payments',
-    cypher: 'MATCH (p:Payment)-[:PAID_BY]->(s:Student)\nRETURN p, s;'
+    category: 'Filtering (WHERE)',
+    label: 'Student Name LIKE "Rah%"',
+    sql: "SELECT studentId, firstName, lastName, email FROM Student WHERE firstName LIKE 'Rah%';"
   },
   {
-    category: 'Relationships',
-    label: 'Procurement',
-    cypher: 'MATCH (p:Procurement)-[:SUPPLIED_BY]->(s:Supplier)\nRETURN p, s;'
-  },
-  {
-    category: 'Relationships',
-    label: 'Senior Mentors',
-    cypher: "MATCH (junior:Student)-[:MENTORED_BY]->(senior:Student)\nRETURN junior.firstName + ' ' + junior.lastName AS mentee, senior.firstName + ' ' + senior.lastName AS mentor;"
+    category: 'Filtering (WHERE)',
+    label: 'Null Email Checks',
+    sql: 'SELECT studentId, firstName, lastName, email FROM Student WHERE email IS NOT NULL;'
   },
 
-  // Aggregation
+  // Joins & Relations
   {
-    category: 'Aggregation',
-    label: 'Hostel Resident Count',
-    cypher: 'MATCH (s:Student)-[:RESIDES_IN]->(h:Hostel)\nRETURN h, count(s) AS student_count;'
+    category: 'Joins & Relations',
+    label: 'Student & Room (INNER JOIN)',
+    sql: 'SELECT s.firstName, r.roomNo FROM Student s JOIN Room r ON s.roomNo = r.roomNo;'
   },
   {
-    category: 'Aggregation',
-    label: 'Payment Totals by Status',
-    cypher: 'MATCH (p:Payment)\nRETURN p.status AS status, count(p) AS count, sum(p.amount) AS totalAmount, round(avg(p.amount), 2) AS avgAmount;'
+    category: 'Joins & Relations',
+    label: 'Student & Hostel Allocation',
+    sql: 'SELECT s.firstName, s.lastName, h.name AS hostel FROM Student s JOIN Hostel h ON s.hostelId = h.hostelId;'
   },
   {
-    category: 'Aggregation',
-    label: 'Room Rent by Type',
-    cypher: 'MATCH (r:Room)-[:OF_TYPE]->(rt:RoomType)\nRETURN rt.typeName AS roomType, count(r) AS roomsCount, avg(r.roomRent) AS avgRent\nORDER BY avgRent DESC;'
+    category: 'Joins & Relations',
+    label: 'Hostel & Wardens',
+    sql: 'SELECT h.name AS hostel, w.name AS warden, w.email FROM Hostel h JOIN Warden w ON h.wardenId = w.wardenId;'
   },
   {
-    category: 'Aggregation',
-    label: 'Staff Payroll by Mess',
-    cypher: 'MATCH (st:Staff)-[:ASSIGNED_TO]->(m:Mess)\nRETURN m.name AS mess, count(st) AS staffCount, sum(st.salary) AS totalPayroll;'
-  },
-
-  // Create / Update
-  {
-    category: 'Create / Update',
-    label: 'CREATE AuditLog Node',
-    cypher: "// Create temporary test audit entry\nCREATE (a:AuditLog {logId: 'AUDIT-' + toString(timestamp()), event: 'QueryStudioTest', createdAt: datetime()})\nRETURN a;"
+    category: 'Joins & Relations',
+    label: 'Student & Mess Subscription',
+    sql: 'SELECT s.firstName, s.lastName, m.name AS messName FROM Student s JOIN Mess m ON s.messId = m.messId;'
   },
   {
-    category: 'Create / Update',
-    label: 'SET Node Property',
-    cypher: "// Update verification date on warden\nMATCH (w:Warden {wardenId: 'W101'})\nSET w.lastVerified = date()\nRETURN w.wardenId AS id, w.name AS name, w.lastVerified AS verifiedDate;"
+    category: 'Joins & Relations',
+    label: 'Student Left Join Room',
+    sql: 'SELECT s.firstName, s.studentId, r.roomNo, r.type FROM Student s LEFT JOIN Room r ON s.roomNo = r.roomNo;'
+  },
+  {
+    category: 'Joins & Relations',
+    label: 'Multi-Join: Student + Room + Hostel',
+    sql: 'SELECT s.firstName, s.lastName, r.roomNo, h.name AS hostel FROM Student s JOIN Room r ON s.roomNo = r.roomNo JOIN Hostel h ON r.hostelId = h.hostelId;'
   },
 
-  // Delete
+  // Aggregations
   {
-    category: 'Delete',
-    label: 'DELETE Test AuditLog',
-    cypher: "// Clean up test audit entries\nMATCH (a:AuditLog)\nWHERE a.event = 'QueryStudioTest'\nDELETE a;"
+    category: 'Aggregations',
+    label: 'Count Students by Gender',
+    sql: 'SELECT gender, COUNT(*) AS total FROM Student GROUP BY gender;'
+  },
+  {
+    category: 'Aggregations',
+    label: 'Payments Total by Status',
+    sql: 'SELECT status, COUNT(*) AS count, SUM(amount) AS totalAmount, ROUND(AVG(amount), 2) AS avgAmount FROM Payment GROUP BY status;'
+  },
+  {
+    category: 'Aggregations',
+    label: 'Average Rent by Room Type',
+    sql: 'SELECT r.type, COUNT(*) AS roomCount, AVG(r.roomRent) AS avgRent FROM Room r GROUP BY r.type ORDER BY avgRent DESC;'
+  },
+
+  // INSERT
+  {
+    category: 'INSERT',
+    label: 'INSERT Student Record',
+    sql: "INSERT INTO Student (studentId, firstName, lastName, gender) VALUES ('S1099', 'Arun', 'Kumar', 'Male');"
+  },
+
+  // UPDATE
+  {
+    category: 'UPDATE',
+    label: 'UPDATE Student Plan',
+    sql: "UPDATE Student SET gender = 'Male' WHERE studentId = 'S1002';"
+  },
+
+  // DELETE
+  {
+    category: 'DELETE',
+    label: 'DELETE Student by ID',
+    sql: "DELETE FROM Student WHERE studentId = 'S1099';"
   }
 ];
 
@@ -288,9 +343,6 @@ function formatCellValue(val) {
   if (typeof val === 'object') {
     const labels = val._labels || val.__labels;
     const relType = val._relType || val.__relType;
-    const entityId = val._id !== undefined ? val._id : val.__id;
-
-    // Filter out internal metadata keys
     const displayKeys = Object.keys(val).filter((k) => !k.startsWith('_') && !k.startsWith('__'));
 
     if (displayKeys.length === 0 && !labels && !relType) {
@@ -313,8 +365,7 @@ function formatCellValue(val) {
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)'
         }}
       >
-        {/* Node/Relationship Header Badge */}
-        {(labels || relType || entityId !== undefined) && (
+        {(labels || relType) && (
           <div
             style={{
               display: 'flex',
@@ -356,146 +407,130 @@ function formatCellValue(val) {
                 [:{relType}]
               </span>
             )}
-            {entityId !== undefined && (
-              <span style={{ fontSize: '0.65rem', color: '#64748b', marginLeft: 'auto' }}>
-                id:{String(entityId)}
-              </span>
-            )}
           </div>
         )}
-
-        {/* Properties list */}
-        {displayKeys.map((k) => {
-          const propVal = val[k];
-          return (
-            <div key={k} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start', margin: '2px 0' }}>
-              <span style={{ color: '#94a3b8', fontWeight: 600, flexShrink: 0 }}>{k}:</span>
-              <span
-                style={{
-                  color: typeof propVal === 'number' ? '#10b981' : typeof propVal === 'boolean' ? '#38bdf8' : Array.isArray(propVal) ? '#38bdf8' : propVal === null ? '#f87171' : '#f1f5f9',
-                  wordBreak: 'break-word'
-                }}
-              >
-                {propVal === null ? (
-                  <span style={{ fontStyle: 'italic', fontSize: '0.72rem' }}>null</span>
-                ) : Array.isArray(propVal) ? (
-                  `[${propVal.map((item) => (typeof item === 'string' ? `"${item}"` : String(item))).join(', ')}]`
-                ) : typeof propVal === 'object' ? (
-                  JSON.stringify(propVal)
-                ) : (
-                  String(propVal)
-                )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 8px' }}>
+          {displayKeys.slice(0, 8).map((k) => (
+            <React.Fragment key={k}>
+              <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>{k}:</span>
+              <span style={{ color: '#f8fafc', wordBreak: 'break-all', fontSize: '0.72rem' }}>
+                {val[k] === null ? 'null' : String(val[k])}
               </span>
-            </div>
-          );
-        })}
+            </React.Fragment>
+          ))}
+          {displayKeys.length > 8 && (
+            <span style={{ gridColumn: 'span 2', color: '#64748b', fontSize: '0.68rem', fontStyle: 'italic' }}>
+              +{displayKeys.length - 8} more properties...
+            </span>
+          )}
+        </div>
       </div>
     );
   }
   return String(val);
 }
 
-function processResultRecords(result) {
-  if (!result) return { columns: [], rows: [] };
-  const rawRows = result.rows || result.data || [];
+function processResultRecords(resultData) {
+  if (!resultData) return { columns: [], rows: [] };
+
+  if (Array.isArray(resultData.columns) && Array.isArray(resultData.rows)) {
+    return {
+      columns: resultData.columns,
+      rows: resultData.rows
+    };
+  }
+
+  const rawRows = resultData.rows || resultData.data || [];
   if (!Array.isArray(rawRows) || rawRows.length === 0) {
-    return { columns: result.columns || [], rows: [] };
+    return { columns: [], rows: [] };
   }
 
-  const rawCols = result.columns && result.columns.length > 0 ? result.columns : Object.keys(rawRows[0]);
-
-  // If a single column was returned and its values are objects (e.g. Node), expand properties into normal columns
-  if (rawCols.length === 1) {
-    const singleCol = rawCols[0];
-    const isObjectColumn = rawRows.every(
-      (r) => r && typeof r[singleCol] === 'object' && r[singleCol] !== null && !Array.isArray(r[singleCol])
-    );
-
-    if (isObjectColumn) {
-      const propKeys = [];
-      rawRows.forEach((r) => {
-        const obj = r[singleCol] || {};
-        Object.keys(obj).forEach((k) => {
-          if (!k.startsWith('_') && !k.startsWith('__') && !propKeys.includes(k)) {
-            propKeys.push(k);
-          }
-        });
-      });
-
-      const unwrapped = rawRows.map((r) => {
-        const obj = r[singleCol] || {};
-        const row = {};
-        propKeys.forEach((k) => {
-          row[k] = obj[k] !== undefined ? obj[k] : null;
-        });
-        return row;
-      });
-
-      return { columns: propKeys, rows: unwrapped };
-    }
-  }
-
-  return { columns: rawCols, rows: rawRows };
+  const first = rawRows[0];
+  const keys = Object.keys(first);
+  return { columns: keys, rows: rawRows };
 }
 
 export default function SqlQueryPage({ showToast }) {
-  const [cypher, setCypher] = useState('MATCH (s:Student)\nRETURN s;');
+  const [sqlQuery, setSqlQuery] = useState('SELECT * FROM Student;');
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [schemaTab, setSchemaTab] = useState('tables'); // 'tables' | 'nodes' | 'relationships'
+  const [selectedItem, setSelectedItem] = useState('Student');
+  const [schemaMap, setSchemaMap] = useState({});
   const [executing, setExecuting] = useState(false);
   const [result, setResult] = useState(null);
   const [errorInfo, setErrorInfo] = useState(null);
-  const [schemaMap, setSchemaMap] = useState({});
-  const [selectedItem, setSelectedItem] = useState('Student');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [schemaTab, setSchemaTab] = useState('nodes'); // 'nodes' | 'relationships' | 'tables'
+  const [showCypherPanel, setShowCypherPanel] = useState(true);
+  const [copiedCypher, setCopiedCypher] = useState(false);
 
   useEffect(() => {
     loadSchema();
   }, []);
 
-  async function loadSchema() {
+  const loadSchema = async () => {
     try {
-      const res = await api.getGraphSchema();
-      setSchemaMap(res.tables || {});
+      const data = await api.getSqlSchema();
+      if (data && data.tables) {
+        setSchemaMap(data.tables);
+      }
     } catch (err) {
-      console.error('Error fetching schema map', err);
+      console.warn('Failed to fetch schema metadata:', err.message);
     }
-  }
+  };
 
-  async function handleExecuteQuery() {
-    if (!cypher.trim()) {
-      setErrorInfo({
-        message: 'Please enter a Cypher query to execute',
-        status: 400
-      });
+  const handleExecuteQuery = async () => {
+    const trimmed = (sqlQuery || '').trim();
+    if (!trimmed) {
+      if (showToast) showToast('Query cannot be empty.', 'warning');
       return;
     }
 
+    // Safety guard against unintentional broad DELETE
+    if (/^\s*DELETE\s+FROM\s+[A-Za-z0-9_]+\s*;?\s*$/i.test(trimmed)) {
+      const confirmAll = window.confirm(
+        'CAUTION: You are about to run a DELETE statement without a WHERE condition, which will remove ALL records from the table. Are you sure you want to proceed?'
+      );
+      if (!confirmAll) return;
+    }
+
+    setExecuting(true);
+    setErrorInfo(null);
+    setResult(null);
+
     try {
-      setExecuting(true);
-      setErrorInfo(null);
-      setResult(null);
-
-      const res = await api.executeCypherQuery(cypher);
-      setResult(res);
-
-      if (!res.rows && !res.data) {
-        loadSchema();
+      const resp = await api.executeSqlQuery(trimmed);
+      setResult(resp);
+      setShowCypherPanel(true);
+      if (showToast) {
+        if (resp.type === 'WRITE') {
+          showToast(`SQL executed successfully (${resp.changes || 1} change${resp.changes === 1 ? '' : 's'})`, 'success');
+        } else {
+          showToast(`Query completed: ${resp.count || 0} record(s)`, 'success');
+        }
       }
     } catch (err) {
-      setErrorInfo({
-        message: err.message || 'An error occurred during query execution',
-        status: err.status || 400
-      });
+      console.error('SQL Studio Execution Error:', err);
+      const msg = err.data?.message || err.data?.error || err.message || 'Execution failed';
+      setErrorInfo({ message: msg });
+      if (showToast) showToast(`Query Error: ${msg}`, 'error');
     } finally {
       setExecuting(false);
     }
-  }
+  };
 
-  function handleKeyDown(e) {
+  const handleKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
       handleExecuteQuery();
     }
-  }
+  };
+
+  const handleCopyCypher = () => {
+    if (!result?.generatedCypher && !result?.cypher) return;
+    const text = result.generatedCypher || result.cypher;
+    navigator.clipboard.writeText(text);
+    setCopiedCypher(true);
+    setTimeout(() => setCopiedCypher(false), 2000);
+  };
 
   const { columns: resultCols, rows: resultRows } = processResultRecords(result);
   const isSelectResult = result && Array.isArray(resultRows) && (resultRows.length > 0 || (resultCols && resultCols.length > 0));
@@ -524,7 +559,12 @@ export default function SqlQueryPage({ showToast }) {
             >
               <Terminal size={20} />
             </div>
-            <h2 style={{ margin: 0 }}>Cypher Studio</h2>
+            <div>
+              <h2 style={{ margin: 0 }}>SQL Studio</h2>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Write standard SQL queries with real-time translation & execution against Neo4j AuraDB
+              </p>
+            </div>
           </div>
         </div>
 
@@ -536,13 +576,13 @@ export default function SqlQueryPage({ showToast }) {
         </div>
       </div>
 
-      {/* Cypher Snippets Categories Toolbar */}
+      {/* SQL Snippet Categories Toolbar */}
       <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: 2 }}>
-            Cypher Categories:
+            SQL Categories:
           </span>
-          {CYPHER_CATEGORIES.map((cat) => {
+          {SQL_CATEGORIES.map((cat) => {
             const isActive = activeCategory === cat;
             return (
               <button
@@ -568,12 +608,12 @@ export default function SqlQueryPage({ showToast }) {
           })}
         </div>
 
-        {/* Quick Cypher Action Chips */}
+        {/* Quick SQL Action Chips */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           {filteredCommands.map((q, idx) => (
             <button
               key={idx}
-              onClick={() => setCypher(q.cypher)}
+              onClick={() => setSqlQuery(q.sql)}
               className="btn btn-secondary btn-sm"
               style={{
                 padding: '4px 10px',
@@ -587,9 +627,9 @@ export default function SqlQueryPage({ showToast }) {
         </div>
       </div>
 
-      {/* Main Studio Grid: Graph Schema Explorer + Cypher Editor */}
-      <div style={{ display: 'grid', gridTemplateColumns: '270px 1fr', gap: 18, marginBottom: 20 }}>
-        {/* Left: Graph Schema & Entity Explorer */}
+      {/* Main Studio Grid: SQL Schema Explorer + SQL Editor */}
+      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 18, marginBottom: 20 }}>
+        {/* Left: SQL Schema & Relational Explorer */}
         <div
           className="panel"
           style={{
@@ -617,14 +657,31 @@ export default function SqlQueryPage({ showToast }) {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Network size={14} color="var(--primary)" />
-              <span>Graph Schema</span>
+              <Database size={14} color="var(--primary)" />
+              <span>SQL Schema</span>
             </div>
-            <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>AuraDB</span>
+            <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>AuraDB Live</span>
           </div>
 
-          {/* Subtabs: Nodes / Relationships / Tables */}
+          {/* Subtabs: Tables / Nodes / Relationships */}
           <div style={{ display: 'flex', gap: 4, marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--bg-card-border)' }}>
+            <button
+              type="button"
+              onClick={() => setSchemaTab('tables')}
+              style={{
+                flex: 1,
+                padding: '3px 6px',
+                fontSize: '0.70rem',
+                fontWeight: schemaTab === 'tables' ? 700 : 500,
+                borderRadius: '4px',
+                background: schemaTab === 'tables' ? 'rgba(37, 99, 235, 0.2)' : 'transparent',
+                color: schemaTab === 'tables' ? '#38bdf8' : 'var(--text-muted)',
+                border: schemaTab === 'tables' ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
+                cursor: 'pointer'
+              }}
+            >
+              SQL Tables ({tablesList.length})
+            </button>
             <button
               type="button"
               onClick={() => setSchemaTab('nodes')}
@@ -657,29 +714,51 @@ export default function SqlQueryPage({ showToast }) {
                 cursor: 'pointer'
               }}
             >
-              Rels ({GRAPH_RELATIONSHIPS.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setSchemaTab('tables')}
-              style={{
-                flex: 1,
-                padding: '3px 6px',
-                fontSize: '0.70rem',
-                fontWeight: schemaTab === 'tables' ? 700 : 500,
-                borderRadius: '4px',
-                background: schemaTab === 'tables' ? 'rgba(37, 99, 235, 0.2)' : 'transparent',
-                color: schemaTab === 'tables' ? '#38bdf8' : 'var(--text-muted)',
-                border: schemaTab === 'tables' ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
-                cursor: 'pointer'
-              }}
-            >
-              Tables ({tablesList.length})
+              Joins ({GRAPH_RELATIONSHIPS.length})
             </button>
           </div>
 
           {/* List items based on schemaTab */}
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {schemaTab === 'tables' && (
+              tablesList.map((table) => {
+                const isSelected = selectedItem === table;
+                const colCount = schemaMap[table]?.length;
+                return (
+                  <button
+                    key={table}
+                    onClick={() => {
+                      setSelectedItem(table);
+                      setSqlQuery(`SELECT * FROM ${table};`);
+                    }}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '5px 8px',
+                      borderRadius: '6px',
+                      background: isSelected ? 'rgba(37, 99, 235, 0.18)' : 'transparent',
+                      border: isSelected ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid transparent',
+                      color: isSelected ? '#ffffff' : 'var(--text-secondary)',
+                      fontSize: '0.78rem',
+                      fontFamily: 'var(--font-mono)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <span style={{ fontWeight: isSelected ? 700 : 500 }}>{table}</span>
+                    {colCount !== undefined && (
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        {colCount} cols
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            )}
+
             {schemaTab === 'nodes' && (
               GRAPH_NODES.map((node) => {
                 const isSelected = selectedItem === node.label;
@@ -688,7 +767,7 @@ export default function SqlQueryPage({ showToast }) {
                     key={node.label}
                     onClick={() => {
                       setSelectedItem(node.label);
-                      setCypher(node.query);
+                      setSqlQuery(node.query);
                     }}
                     style={{
                       width: '100%',
@@ -724,7 +803,7 @@ export default function SqlQueryPage({ showToast }) {
                     key={rel.type}
                     onClick={() => {
                       setSelectedItem(rel.type);
-                      setCypher(rel.query);
+                      setSqlQuery(rel.query);
                     }}
                     style={{
                       width: '100%',
@@ -742,6 +821,7 @@ export default function SqlQueryPage({ showToast }) {
                       justifyContent: 'space-between',
                       transition: 'all 0.15s ease'
                     }}
+                    title={rel.desc}
                   >
                     <span style={{ fontWeight: isSelected ? 700 : 500, color: '#38bdf8' }}>
                       [:{rel.type}]
@@ -753,50 +833,10 @@ export default function SqlQueryPage({ showToast }) {
                 );
               })
             )}
-
-            {schemaTab === 'tables' && (
-              tablesList.map((table) => {
-                const isSelected = selectedItem === table;
-                const colCount = schemaMap[table]?.length;
-                return (
-                  <button
-                    key={table}
-                    onClick={() => {
-                      setSelectedItem(table);
-                      const cypherQuery = TABLE_CYPHER_MAP[table] || (TABLE_TO_LABEL_MAP[table] ? `MATCH (${TABLE_TO_LABEL_MAP[table].alias}:${TABLE_TO_LABEL_MAP[table].label})\nRETURN ${TABLE_TO_LABEL_MAP[table].alias};` : `MATCH (n:${table})\nRETURN n;`);
-                      setCypher(cypherQuery);
-                    }}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '5px 8px',
-                      borderRadius: '6px',
-                      background: isSelected ? 'rgba(37, 99, 235, 0.18)' : 'transparent',
-                      border: isSelected ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid transparent',
-                      color: isSelected ? '#ffffff' : 'var(--text-secondary)',
-                      fontSize: '0.78rem',
-                      fontFamily: 'var(--font-mono)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <span style={{ fontWeight: isSelected ? 700 : 500 }}>{table}</span>
-                    {colCount !== undefined && (
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                        {colCount} cols
-                      </span>
-                    )}
-                  </button>
-                );
-              })
-            )}
           </div>
         </div>
 
-        {/* Right: Cypher Editor Surface */}
+        {/* Right: SQL Editor Surface */}
         <div
           className="panel"
           style={{
@@ -819,13 +859,13 @@ export default function SqlQueryPage({ showToast }) {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
               <Code2 size={14} color="var(--primary)" />
-              <span>Interactive Cypher Studio (Neo4j AuraDB)</span>
+              <span>SQL Query Editor (Neo4j AuraDB)</span>
             </div>
 
             <div style={{ display: 'flex', gap: 6 }}>
               <button
                 className="btn btn-secondary btn-sm"
-                onClick={() => setCypher('')}
+                onClick={() => setSqlQuery('')}
                 title="Clear editor"
               >
                 <Trash2 size={12} />
@@ -837,7 +877,7 @@ export default function SqlQueryPage({ showToast }) {
                 disabled={executing}
               >
                 <Play size={12} />
-                <span>{executing ? 'Executing...' : 'Run Query (Ctrl + Enter)'}</span>
+                <span>{executing ? 'Translating & Executing...' : 'Run Query (Ctrl + Enter)'}</span>
               </button>
             </div>
           </div>
@@ -859,14 +899,107 @@ export default function SqlQueryPage({ showToast }) {
               lineHeight: 1.5,
               outline: 'none'
             }}
-            value={cypher}
-            onChange={(e) => setCypher(e.target.value)}
+            value={sqlQuery}
+            onChange={(e) => setSqlQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="MATCH (s:Student)&#10;RETURN s;"
+            placeholder="-- Write standard SQL queries&#10;SELECT s.firstName, r.roomNo&#10;FROM Student s&#10;JOIN Room r ON s.roomNo = r.roomNo&#10;WHERE s.gender = 'Male';"
             spellCheck="false"
           />
         </div>
       </div>
+
+      {/* Collapsible "Generated Cypher" Transparency Section */}
+      {result && (result.generatedCypher || result.cypher) && (
+        <div
+          className="panel"
+          style={{
+            marginBottom: 20,
+            padding: '12px 16px',
+            background: 'rgba(15, 23, 42, 0.65)',
+            borderColor: 'rgba(56, 189, 248, 0.25)'
+          }}
+        >
+          <div
+            onClick={() => setShowCypherPanel(!showCypherPanel)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {showCypherPanel ? <ChevronDown size={16} color="#38bdf8" /> : <ChevronRight size={16} color="#38bdf8" />}
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                Generated Cypher
+              </span>
+              <span
+                style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 600,
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  background: 'rgba(56, 189, 248, 0.15)',
+                  color: '#38bdf8',
+                  border: '1px solid rgba(56, 189, 248, 0.3)'
+                }}
+              >
+                Auto-Translated & Parameterized
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                {result.executionTimeMs} ms
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyCypher();
+                }}
+                style={{ padding: '3px 8px', fontSize: '0.70rem' }}
+                title="Copy generated Cypher to clipboard"
+              >
+                {copiedCypher ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                <span>{copiedCypher ? 'Copied' : 'Copy Cypher'}</span>
+              </button>
+            </div>
+          </div>
+
+          {showCypherPanel && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+              <pre
+                style={{
+                  margin: 0,
+                  padding: '10px 12px',
+                  background: '#070b14',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.80rem',
+                  color: '#38bdf8',
+                  whiteSpace: 'pre-wrap',
+                  lineHeight: 1.45
+                }}
+              >
+                {result.generatedCypher || result.cypher}
+              </pre>
+
+              {result.params && Object.keys(result.params).length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.72rem' }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Parameters:</span>
+                  <code style={{ color: '#a855f7', fontFamily: 'var(--font-mono)' }}>
+                    {JSON.stringify(result.params)}
+                  </code>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Query Execution Results Section (Unified Results & Status) */}
       {(result || errorInfo) && (
@@ -989,14 +1122,6 @@ export default function SqlQueryPage({ showToast }) {
                   <span style={{ color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
                     {result.executionTimeMs} ms
                   </span>
-                  {result.query && result.originalQuery && result.query.trim().toLowerCase() !== result.originalQuery.trim().toLowerCase() && (
-                    <>
-                      <span style={{ color: 'var(--text-muted)' }}>·</span>
-                      <span style={{ color: '#a855f7', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
-                        Executed: {result.query}
-                      </span>
-                    </>
-                  )}
                 </div>
               )}
             </div>
@@ -1053,7 +1178,7 @@ export default function SqlQueryPage({ showToast }) {
             </div>
           ) : (
             <div style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
-              {result.message || 'Cypher statement executed successfully in Neo4j database.'}
+              {result.message || 'SQL statement executed successfully in Neo4j database.'}
             </div>
           )}
         </div>
