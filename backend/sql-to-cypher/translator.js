@@ -291,16 +291,32 @@ function translateFunctionCall(funcNode, ctx) {
   const cypherFunc = funcMap[name] || name.toLowerCase();
 
   const argsNode = funcNode.args;
-  if (!argsNode || !argsNode.value) {
+  if (!argsNode) {
     if (name === 'COUNT') return 'count(*)';
     return `${cypherFunc}()`;
   }
 
-  const argsList = Array.isArray(argsNode.value) ? argsNode.value : [argsNode.value];
+  // Determine distinct prefix
   const distinctPrefix = (argsNode.distinct && typeof argsNode.distinct === 'string') ? 'DISTINCT ' : '';
 
+  // Extract argument items: can be argsNode.expr (e.g. aggr_func) or argsNode.value (e.g. expr_list)
+  let argsList = [];
+  if (argsNode.expr) {
+    argsList = [argsNode.expr];
+  } else if (argsNode.value) {
+    argsList = Array.isArray(argsNode.value) ? argsNode.value : [argsNode.value];
+  } else if (Array.isArray(argsNode)) {
+    argsList = argsNode;
+  }
+
+  if (argsList.length === 0) {
+    if (name === 'COUNT') return 'count(*)';
+    return `${cypherFunc}()`;
+  }
+
   const translatedArgs = argsList.map(a => {
-    if (a.type === 'star' || a.column === '*') return '*';
+    if (!a) return '';
+    if (a.type === 'star' || a.column === '*' || a.value === '*') return '*';
     if (a.type === 'column_ref') return ctx.resolveColumn(a);
     if (a.type === 'number' || a.type === 'single_quote_string' || a.type === 'string') {
       return ctx.addParam(extractLiteralValue(a));

@@ -93,15 +93,24 @@ async function runTests() {
     assert(false, `ORDER BY and LIMIT failed: ${err.message}`);
   }
 
-  // Test 5: COUNT and GROUP BY
-  console.log('\n5. Test: COUNT and GROUP BY');
+  // Test 5: COUNT, SUM, AVG, MIN, MAX and GROUP BY
+  console.log('\n5. Test: COUNT, SUM, AVG, MIN, MAX and GROUP BY');
   try {
     const t = translateSqlToCypher('SELECT gender, COUNT(*) AS total FROM Student GROUP BY gender;');
     assert(t.cypher.includes('count(*) AS total'), 'Count aggregation translated');
     const rows = await query(t.cypher, t.params);
     assert(rows.length >= 2, `GROUP BY returned groups: ${JSON.stringify(rows)}`);
+
+    // Test aggregations: AVG, SUM, MIN, MAX
+    const tAggr = translateSqlToCypher('SELECT count(*), avg(roomRent), min(roomRent), max(roomRent), sum(roomRent) FROM Room;');
+    assert(tAggr.cypher.includes('avg(r.roomRent)'), 'AVG translated with column');
+    assert(tAggr.cypher.includes('min(r.roomRent)'), 'MIN translated with column');
+    assert(tAggr.cypher.includes('max(r.roomRent)'), 'MAX translated with column');
+    assert(tAggr.cypher.includes('sum(r.roomRent)'), 'SUM translated with column');
+    const aggrRows = await query(tAggr.cypher, tAggr.params);
+    assert(aggrRows.length === 1, `Aggregate query executed, returned: ${JSON.stringify(aggrRows[0])}`);
   } catch (err) {
-    assert(false, `COUNT & GROUP BY failed: ${err.message}`);
+    assert(false, `COUNT, SUM, AVG, MIN, MAX failed: ${err.message}`);
   }
 
   // Test 6: INNER JOIN and LEFT JOIN
