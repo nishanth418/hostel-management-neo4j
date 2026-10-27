@@ -300,8 +300,8 @@ export default function DashboardPage({ onNavigate }) {
             >
               <Terminal size={18} color="#a855f7" />
               <div>
-                <div style={{ fontWeight: 700, fontSize: '0.86rem' }}>SQL Studio</div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>SQL queries & analytics</div>
+                <div style={{ fontWeight: 700, fontSize: '0.86rem' }}>Cypher Studio</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Graph queries & analytics</div>
               </div>
             </button>
 

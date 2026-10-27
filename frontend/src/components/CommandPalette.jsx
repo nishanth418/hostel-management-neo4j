@@ -16,7 +16,7 @@ const SEARCH_ITEMS = [
   { id: 'procurement', label: 'Procurement Records & Orders', category: 'Supply Chain', icon: ShoppingBag },
   { id: 'payments', label: 'Student Fees & Payments', category: 'Finance', icon: CreditCard },
   { id: 'reports', label: 'Analytics Reports (13 Views)', category: 'Analytics', icon: FileBarChart2 },
-  { id: 'sql-query', label: 'SQL Studio & Query Engine', category: 'Developer / DBA', icon: Terminal },
+  { id: 'sql-query', label: 'Cypher Studio & Query Engine', category: 'Developer / DBA', icon: Terminal },
   { id: 'settings', label: 'System Settings & Theme Preferences', category: 'System', icon: Settings },
   // Direct Relational Table Views
   { id: 'table_STUDENT', label: 'Database Table: STUDENT', category: '18 Tables', icon: Database },
