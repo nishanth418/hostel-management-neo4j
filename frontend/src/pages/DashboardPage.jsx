@@ -127,14 +127,10 @@ export default function DashboardPage({ onNavigate }) {
         }}
       >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#38bdf8', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase' }}>
-            <Sparkles size={14} />
-            <span>Campus Overview Active</span>
-          </div>
-          <h2 style={{ fontSize: '1.65rem', fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
-            Operations & Housing Dashboard
+          <h2 style={{ fontSize: '1.65rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+            Dashboard
           </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', marginTop: 2 }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', marginTop: 4 }}>
             Real-time analytics across all 5 hostel blocks, 18 relational tables, and residential wards.
           </p>
         </div>
