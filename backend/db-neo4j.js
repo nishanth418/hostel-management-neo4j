@@ -85,10 +85,21 @@ function toNative(val) {
   return val;
 }
 
+const RAW_SQL_PATTERN = /^\s*(SELECT|INSERT\s+INTO|UPDATE\s+[A-Za-z0-9_]+\s+SET|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|CREATE\s+TABLE)\b/i;
+
+function assertNotRawSql(queryText) {
+  if (typeof queryText === 'string' && RAW_SQL_PATTERN.test(queryText)) {
+    throw new Error(
+      'Raw SQL queries cannot be executed directly on Neo4j AuraDB. All SQL queries must be translated into Cypher before execution.'
+    );
+  }
+}
+
 /**
  * Execute a read Cypher query and return array of flat row objects
  */
 async function query(cypher, params = {}) {
+  assertNotRawSql(cypher);
   const driver = getDriver();
   const session = driver.session({ defaultAccessMode: neo4j.session.READ });
   try {
@@ -109,6 +120,7 @@ async function query(cypher, params = {}) {
  * Execute a write Cypher statement (MERGE, CREATE, SET, DELETE)
  */
 async function execute(cypher, params = {}) {
+  assertNotRawSql(cypher);
   const driver = getDriver();
   const session = driver.session({ defaultAccessMode: neo4j.session.WRITE });
   try {

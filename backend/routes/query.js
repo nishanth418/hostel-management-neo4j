@@ -176,28 +176,6 @@ const RELATIONSHIPS = [
   { type: 'HAS_DETAIL', source: 'Payment', target: 'PaymentDetail', desc: 'Detailed billing breakdown' }
 ];
 
-const TABLE_TO_LABEL_MAP = {
-  STUDENT: { label: 'Student', alias: 's' },
-  HOSTEL: { label: 'Hostel', alias: 'h' },
-  ROOM_TYPE: { label: 'RoomType', alias: 'rt' },
-  ROOM: { label: 'Room', alias: 'r' },
-  WARDEN: { label: 'Warden', alias: 'w' },
-  MESS: { label: 'Mess', alias: 'm' },
-  MEAL: { label: 'Meal', alias: 'ml' },
-  STAFF: { label: 'Staff', alias: 'st' },
-  SUPPLIER: { label: 'Supplier', alias: 'sup' },
-  INVENTORY_ITEM: { label: 'InventoryItem', alias: 'i' },
-  PROCUREMENT: { label: 'Procurement', alias: 'p' },
-  PROCURES: { label: 'Procurement', alias: 'p' },
-  PAYMENT: { label: 'Payment', alias: 'pay' },
-  PAYMENT_DETAIL: { label: 'PaymentDetail', alias: 'pd' },
-  STUDENT_PHONE: { label: 'Student', alias: 's' },
-  WARDEN_PHONE: { label: 'Warden', alias: 'w' },
-  STAFF_PHONE: { label: 'Staff', alias: 'st' },
-  SUPPLIER_PHONE: { label: 'Supplier', alias: 'sup' },
-  MESS_CONTACT: { label: 'Mess', alias: 'm' }
-};
-
 function stripComments(text) {
   if (!text || typeof text !== 'string') return '';
   return text
@@ -205,77 +183,6 @@ function stripComments(text) {
     .replace(/\/\/[^\r\n]*/g, '')
     .replace(/#[^\r\n]*/g, '')
     .trim();
-}
-
-/**
- * Translates MySQL-style SQL queries (e.g. SELECT * FROM STUDENT) to Cypher (MATCH (s:Student) RETURN s),
- * and normalizes uppercase MySQL table names in Cypher queries to proper Neo4j labels.
- */
-function translateSqlOrNormalizeCypher(rawQuery) {
-  if (!rawQuery || typeof rawQuery !== 'string') return rawQuery;
-  const stripped = stripComments(rawQuery);
-  const trimmed = stripped.trim().replace(/;+\s*$/, '');
-
-  // 1. Check if query is SQL SELECT
-  const selectRegex = /^\s*SELECT\s+([\s\S]+?)\s+FROM\s+([A-Za-z0-9_]+)(?:\s+WHERE\s+([\s\S]+?))?(?:\s+ORDER\s+BY\s+([\s\S]+?))?(?:\s+LIMIT\s+(\d+))?\s*$/i;
-  const match = trimmed.match(selectRegex);
-
-  if (match) {
-    const rawCols = match[1].trim();
-    const rawTable = match[2].trim().toUpperCase();
-    const rawWhere = match[3] ? match[3].trim() : null;
-    const rawOrderBy = match[4] ? match[4].trim() : null;
-    const rawLimit = match[5] ? match[5].trim() : null;
-
-    const mapping = TABLE_TO_LABEL_MAP[rawTable] || {
-      label: rawTable.charAt(0).toUpperCase() + rawTable.slice(1).toLowerCase(),
-      alias: rawTable.charAt(0).toLowerCase()
-    };
-    const { label, alias } = mapping;
-
-    let cypher = `MATCH (${alias}:${label})`;
-
-    if (rawWhere) {
-      let whereClause = rawWhere.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s*(=|!=|<>|<|>|<=|>=|LIKE|IN)\b/gi, (m, col, op) => {
-        if (col.toLowerCase() === alias.toLowerCase() || col.includes('.')) return m;
-        return `${alias}.${col} ${op}`;
-      });
-      cypher += ` WHERE ${whereClause}`;
-    }
-
-    if (rawCols === '*') {
-      cypher += ` RETURN ${alias}`;
-    } else {
-      const cols = rawCols.split(',').map(c => c.trim()).map(c => {
-        if (c.toLowerCase().startsWith(alias.toLowerCase() + '.') || c.includes('(')) return c;
-        return `${alias}.${c}`;
-      }).join(', ');
-      cypher += ` RETURN ${cols}`;
-    }
-
-    if (rawOrderBy) {
-      let orderClause = rawOrderBy.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\b/g, (col) => {
-        if (['ASC', 'DESC'].includes(col.toUpperCase()) || col.includes('.')) return col;
-        return `${alias}.${col}`;
-      });
-      cypher += ` ORDER BY ${orderClause}`;
-    }
-
-    if (rawLimit) {
-      cypher += ` LIMIT ${rawLimit}`;
-    }
-
-    return cypher;
-  }
-
-  // 2. Normalize uppercase table names in Cypher queries: e.g. (:STUDENT) -> (:Student)
-  let normalized = trimmed;
-  for (const [table, { label }] of Object.entries(TABLE_TO_LABEL_MAP)) {
-    const labelRegex = new RegExp(`(:\\s*)${table}(\\b)`, 'gi');
-    normalized = normalized.replace(labelRegex, `$1${label}$2`);
-  }
-
-  return normalized;
 }
 
 function unwrapRecords(rows) {
@@ -303,6 +210,21 @@ function unwrapRecords(rows) {
           }
         });
       });
+
+      // Sort properties so primary key and prominent attributes come first
+      const sampleNode = rows[0][colKey] || {};
+      const nodeLabel = (sampleNode._labels && sampleNode._labels[0]) || null;
+      if (nodeLabel && ENTITIES[nodeLabel]) {
+        const preferredProps = Object.values(ENTITIES[nodeLabel].properties);
+        propKeys.sort((a, b) => {
+          const idxA = preferredProps.indexOf(a);
+          const idxB = preferredProps.indexOf(b);
+          if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+          if (idxA !== -1) return -1;
+          if (idxB !== -1) return 1;
+          return a.localeCompare(b);
+        });
+      }
 
       const unwrappedRows = rows.map(r => {
         const obj = r[colKey] || {};
@@ -339,22 +261,30 @@ function isReadQuery(text) {
   return true;
 }
 
-// POST /api/query - Execute SQL Studio queries (with SQL-to-Cypher translation)
+// POST /api/query - Execute SQL Studio queries (with AST-based SQL-to-Cypher translation)
 router.post('/', async (req, res) => {
-  try {
-    const rawQuery = req.body.sql || req.body.query || req.body.cypher;
-    if (!rawQuery || typeof rawQuery !== 'string' || !rawQuery.trim()) {
-      return res.status(400).json({
-        success: false,
-        error: 'Query cannot be empty.',
-        message: 'Query cannot be empty.'
-      });
-    }
+  const rawQuery = req.body.sql || req.body.query || req.body.cypher;
+  if (!rawQuery || typeof rawQuery !== 'string' || !rawQuery.trim()) {
+    return res.status(400).json({
+      success: false,
+      status: 'FAILED',
+      errorType: 'SQL_PARSING_ERROR',
+      error: 'Query cannot be empty.',
+      message: 'Query cannot be empty.'
+    });
+  }
 
+  let cleanQuery = null;
+  let params = {};
+  let translationSucceeded = false;
+
+  try {
     const stripped = stripComments(rawQuery);
     const translation = translateSqlToCypher(stripped);
-    const cleanQuery = translation.cypher.trim().replace(/;+$/, '');
-    const params = translation.params || {};
+    cleanQuery = translation.cypher.trim().replace(/;+$/, '');
+    params = translation.params || {};
+    translationSucceeded = true;
+
     const queryType = translation.type || (isReadQuery(cleanQuery) ? 'READ' : 'WRITE');
     const startTime = process.hrtime();
 
@@ -367,6 +297,7 @@ router.post('/', async (req, res) => {
 
       return res.json({
         success: true,
+        status: 'SUCCESS',
         type: 'READ',
         sql: rawQuery.trim(),
         originalQuery: rawQuery.trim(),
@@ -399,6 +330,7 @@ router.post('/', async (req, res) => {
 
     return res.json({
       success: true,
+      status: 'SUCCESS',
       type: 'WRITE',
       sql: rawQuery.trim(),
       originalQuery: rawQuery.trim(),
@@ -416,12 +348,20 @@ router.post('/', async (req, res) => {
       executionTimeMs
     });
   } catch (error) {
-    console.error('Error executing query:', error);
+    console.error('Error executing query:', error.message);
+    const errorType = error.errorType || (translationSucceeded ? 'NEO4J_EXECUTION_ERROR' : 'TRANSLATION_ERROR');
+
     return res.status(400).json({
       success: false,
+      status: 'FAILED',
+      errorType,
       error: error.message,
       message: error.message,
-      sql: req.body.sql || req.body.query || req.body.cypher
+      sql: rawQuery.trim(),
+      originalQuery: rawQuery.trim(),
+      generatedCypher: cleanQuery || null,
+      cypher: cleanQuery || null,
+      params
     });
   }
 });

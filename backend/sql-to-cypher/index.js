@@ -2,7 +2,14 @@
  * SQL-to-Cypher Module Entrypoint
  */
 
-const { translateSqlToCypher, normalizeCypherQuery } = require('./translator');
+const {
+  translateSqlToCypher,
+  normalizeCypherQuery,
+  SqlParsingError,
+  UnsupportedSqlFeatureError,
+  TranslationError
+} = require('./translator');
+
 const {
   ENTITIES,
   TABLE_ALIASES,
@@ -16,6 +23,9 @@ const {
 module.exports = {
   translateSqlToCypher,
   normalizeCypherQuery,
+  SqlParsingError,
+  UnsupportedSqlFeatureError,
+  TranslationError,
   ENTITIES,
   TABLE_ALIASES,
   AUX_PHONE_TABLES,

@@ -21,6 +21,30 @@ const PARSER_OPT = {
   database: 'MySQL'
 };
 
+class SqlParsingError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'SqlParsingError';
+    this.errorType = 'SQL_PARSING_ERROR';
+  }
+}
+
+class UnsupportedSqlFeatureError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'UnsupportedSqlFeatureError';
+    this.errorType = 'UNSUPPORTED_SQL_FEATURE';
+  }
+}
+
+class TranslationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'TranslationError';
+    this.errorType = 'TRANSLATION_ERROR';
+  }
+}
+
 class TranslationContext {
   constructor() {
     this.params = {};
@@ -55,7 +79,7 @@ class TranslationContext {
 
     const entityName = resolveEntityName(rawTable);
     if (!entityName || !ENTITIES[entityName]) {
-      throw new Error(`Unknown table "${rawTable}". Valid tables: ${Object.keys(ENTITIES).join(', ')}, or auxiliary phone tables.`);
+      throw new TranslationError(`Unknown table "${rawTable}". Valid tables: ${Object.keys(ENTITIES).join(', ')}, or auxiliary phone tables.`);
     }
 
     const entity = ENTITIES[entityName];
@@ -222,7 +246,7 @@ function translateWhereExpr(expr, ctx) {
     return ctx.addParam(expr.value);
   }
 
-  if (expr.type === 'bool' || expr.type === 'boolean') {
+  if (expr.type === 'bool') {
     return expr.value ? 'true' : 'false';
   }
 
@@ -234,86 +258,101 @@ function translateWhereExpr(expr, ctx) {
     return translateFunctionCall(expr, ctx);
   }
 
-  // Fallback for raw value
-  if (expr.value !== undefined) {
-    return ctx.addParam(expr.value);
-  }
-
   return '';
 }
 
-function extractLiteralValue(expr) {
-  if (!expr) return null;
-  if (expr.type === 'single_quote_string' || expr.type === 'string' || expr.type === 'number') {
-    return expr.value;
-  }
-  if (expr.type === 'bool' || expr.type === 'boolean') {
-    return Boolean(expr.value);
-  }
-  if (expr.type === 'null') {
-    return null;
-  }
-  return expr.value !== undefined ? expr.value : null;
+/**
+ * Extracts a JS primitive from a literal AST node
+ */
+function extractLiteralValue(node) {
+  if (!node) return null;
+  if (node.value !== undefined) return node.value;
+  return null;
 }
 
-function translateFunctionCall(fnExpr, ctx) {
-  const name = (fnExpr.name || fnExpr.name?.name || '').toUpperCase();
-  const args = fnExpr.args;
-
-  if (name === 'COUNT') {
-    if (!args || !args.value || args.value.length === 0 || (args.value[0] && (args.value[0].type === 'star' || args.value[0].column === '*'))) {
-      return 'count(*)';
-    }
-    if (args.distinct) {
-      return `count(DISTINCT ${translateWhereExpr(args.value[0], ctx)})`;
-    }
-    return `count(${translateWhereExpr(args.value[0], ctx)})`;
-  }
-
-  const fnMap = {
-    SUM: 'sum',
-    AVG: 'avg',
-    MIN: 'min',
-    MAX: 'max',
-    UPPER: 'toUpper',
-    LOWER: 'toLower',
-    ROUND: 'round',
-    COALESCE: 'coalesce'
+/**
+ * Translates SQL functions (COUNT, SUM, AVG, MIN, MAX, ROUND, etc.) to Cypher
+ */
+function translateFunctionCall(funcNode, ctx) {
+  const name = (funcNode.name || '').toUpperCase();
+  const funcMap = {
+    'COUNT': 'count',
+    'SUM': 'sum',
+    'AVG': 'avg',
+    'MIN': 'min',
+    'MAX': 'max',
+    'ROUND': 'round',
+    'COALESCE': 'coalesce',
+    'LOWER': 'toLower',
+    'UPPER': 'toUpper',
+    'LENGTH': 'size'
   };
 
-  const cFn = fnMap[name] || name.toLowerCase();
-  const argList = (args && args.value ? args.value : []).map(a => translateWhereExpr(a, ctx));
-  return `${cFn}(${argList.join(', ')})`;
+  const cypherFunc = funcMap[name] || name.toLowerCase();
+
+  const argsNode = funcNode.args;
+  if (!argsNode || !argsNode.value) {
+    if (name === 'COUNT') return 'count(*)';
+    return `${cypherFunc}()`;
+  }
+
+  const argsList = Array.isArray(argsNode.value) ? argsNode.value : [argsNode.value];
+  const distinctPrefix = (argsNode.distinct && typeof argsNode.distinct === 'string') ? 'DISTINCT ' : '';
+
+  const translatedArgs = argsList.map(a => {
+    if (a.type === 'star' || a.column === '*') return '*';
+    if (a.type === 'column_ref') return ctx.resolveColumn(a);
+    if (a.type === 'number' || a.type === 'single_quote_string' || a.type === 'string') {
+      return ctx.addParam(extractLiteralValue(a));
+    }
+    if (a.type === 'function' || a.type === 'aggr_func') {
+      return translateFunctionCall(a, ctx);
+    }
+    return translateWhereExpr(a, ctx);
+  });
+
+  return `${cypherFunc}(${distinctPrefix}${translatedArgs.join(', ')})`;
 }
 
 /**
  * Translates a SELECT query
  */
 function translateSelect(ast, ctx) {
-  const fromList = ast.from || [];
-  if (fromList.length === 0) {
-    throw new Error('SELECT query must specify a FROM table.');
+  const fromList = ast.from;
+  if (!fromList || !Array.isArray(fromList) || fromList.length === 0) {
+    throw new TranslationError('SELECT statement must include a FROM table clause.');
   }
 
-  const matchClauses = [];
-  const primaryTable = fromList[0];
-  const primaryInfo = ctx.registerTable(primaryTable.table, primaryTable.as);
+  // 1. Process primary table
+  const primaryTableItem = fromList[0];
+  const rawPrimaryTable = primaryTableItem.table;
+  const rawPrimaryAlias = primaryTableItem.as;
 
-  // 1. Primary Table Pattern
+  const primaryInfo = ctx.registerTable(rawPrimaryTable, rawPrimaryAlias);
+
+  const matchClauses = [];
+
   if (primaryInfo.isAux) {
-    matchClauses.push(`MATCH (${primaryInfo.alias}:${primaryInfo.label}) UNWIND ${primaryInfo.alias}.${primaryInfo.auxConfig.phoneProp} AS PhoneNo`);
+    // Phone auxiliary table unwind pattern
+    const phoneField = primaryInfo.auxConfig.phoneProp || primaryInfo.auxConfig.arrayField || 'phones';
+    matchClauses.push(`MATCH (${primaryInfo.alias}:${primaryInfo.label})`);
+    matchClauses.push(`UNWIND ${primaryInfo.alias}.${phoneField} AS PhoneNo`);
   } else {
     matchClauses.push(`MATCH (${primaryInfo.alias}:${primaryInfo.label})`);
   }
 
-  // 2. Joins
+  // 2. Process joins (INNER JOIN, LEFT JOIN)
   for (let i = 1; i < fromList.length; i++) {
     const joinItem = fromList[i];
-    const joinInfo = ctx.registerTable(joinItem.table, joinItem.as);
-    const isLeftJoin = (joinItem.join || '').toUpperCase().includes('LEFT');
+    const rawJoinTable = joinItem.table;
+    const rawJoinAlias = joinItem.as;
+    const joinType = (joinItem.join || 'INNER JOIN').toUpperCase();
+
+    const joinInfo = ctx.registerTable(rawJoinTable, rawJoinAlias);
+    const isLeftJoin = joinType.includes('LEFT');
     const matchKeyword = isLeftJoin ? 'OPTIONAL MATCH' : 'MATCH';
 
-    // Check if join specifies ON condition with graph relationship
+    // Attempt to resolve relationship from verified graph schema
     let relUsed = null;
     let leftInfo = primaryInfo;
     let rightInfo = joinInfo;
@@ -414,13 +453,17 @@ function translateSelect(ast, ctx) {
   const distinctStr = ast.distinct ? 'DISTINCT ' : '';
   cypher += `\nRETURN ${distinctStr}${returnItems.join(', ')}`;
 
-  // 5. HAVING
+  // 5. HAVING clause
   if (ast.having) {
     const havingCond = translateWhereExpr(ast.having, ctx);
     if (havingCond) {
-      // Cypher HAVING pattern: WITH returnItems WHERE havingCond RETURN returnItems
+      // Cypher HAVING pattern: WITH returnItems WHERE havingCond RETURN returnAliases
+      const returnAliases = returnItems.map(item => {
+        const asMatch = item.match(/\s+AS\s+([A-Za-z0-9_]+)$/i);
+        return asMatch ? asMatch[1] : item;
+      });
       cypher = cypher.replace(/\nRETURN (DISTINCT )?/, '\nWITH $1');
-      cypher += `\nWHERE ${havingCond}\nRETURN ${returnItems.join(', ')}`;
+      cypher += `\nWHERE ${havingCond}\nRETURN ${returnAliases.join(', ')}`;
     }
   }
 
@@ -459,7 +502,7 @@ function translateSelect(ast, ctx) {
     if (!isStar && returnItems.some(item => item.includes('count(') || item.includes('sum('))) {
       // Aggregation queries don't need arbitrary default limit
     } else {
-      cypher += `\nLIMIT 1000`;
+      cypher += `\nLIMIT 500`;
     }
   }
 
@@ -474,52 +517,45 @@ function translateSelect(ast, ctx) {
  * Translates an INSERT INTO query
  */
 function translateInsert(ast, ctx) {
-  const tableItem = ast.table ? ast.table[0] : null;
-  if (!tableItem) throw new Error('INSERT statement missing target table.');
+  const tableNode = ast.table;
+  const rawTable = Array.isArray(tableNode) ? tableNode[0].table : (tableNode.table || tableNode);
+  const entityName = resolveEntityName(rawTable);
 
-  const entityName = resolveEntityName(tableItem.table);
   if (!entityName || !ENTITIES[entityName]) {
-    throw new Error(`Cannot insert into unknown table "${tableItem.table}".`);
+    throw new TranslationError(`Cannot insert into unknown table "${rawTable}".`);
   }
 
   const entity = ENTITIES[entityName];
   const alias = entity.defaultAlias;
-  const columns = (ast.columns || []).map(c => resolvePropertyName(entityName, c));
-
-  const valuesContainer = ast.values;
-  if (!valuesContainer || !valuesContainer.values || valuesContainer.values.length === 0) {
-    throw new Error('INSERT statement missing VALUES clause.');
+  const columns = ast.columns || [];
+  let valuesList = [];
+  if (Array.isArray(ast.values)) {
+    valuesList = ast.values;
+  } else if (ast.values && Array.isArray(ast.values.values)) {
+    valuesList = ast.values.values;
+  } else if (ast.values && ast.values.value) {
+    valuesList = [ast.values];
   }
 
-  const rows = valuesContainer.values.map(valExprList => {
-    const rowObj = {};
-    const exprList = valExprList.value || [];
-    columns.forEach((col, idx) => {
-      if (exprList[idx]) {
-        rowObj[col] = extractLiteralValue(exprList[idx]);
-      }
-    });
-    return rowObj;
-  });
-
-  if (rows.length === 1) {
-    const propsList = [];
-    for (const [k, v] of Object.entries(rows[0])) {
-      const pKey = ctx.addParam(v);
-      propsList.push(`${k}: ${pKey}`);
-    }
-    const cypher = `CREATE (${alias}:${entity.label} { ${propsList.join(', ')} })\nRETURN ${alias}`;
-    return {
-      cypher,
-      params: ctx.params,
-      type: 'WRITE',
-      affectedEntity: entityName
-    };
+  if (!valuesList || valuesList.length === 0) {
+    throw new TranslationError('INSERT statement contains no VALUES.');
   }
 
-  // Multi-row INSERT
-  const batchParam = ctx.addParam(rows);
-  const cypher = `UNWIND ${batchParam} AS row\nCREATE (${alias}:${entity.label})\nSET ${alias} = row\nRETURN ${alias}`;
+  const rowValues = valuesList[0].value;
+  const propAssignments = [];
+
+  for (let i = 0; i < columns.length; i++) {
+    const rawCol = columns[i];
+    const valNode = rowValues[i];
+    const propName = resolvePropertyName(entityName, rawCol);
+    const val = extractLiteralValue(valNode);
+    const paramKey = ctx.addParam(val);
+    propAssignments.push(`${propName}: ${paramKey}`);
+  }
+
+  const propsStr = propAssignments.join(', ');
+  const cypher = `CREATE (${alias}:${entity.label} { ${propsStr} })\nRETURN ${alias}`;
+
   return {
     cypher,
     params: ctx.params,
@@ -529,39 +565,50 @@ function translateInsert(ast, ctx) {
 }
 
 /**
- * Translates an UPDATE query
+ * Translates an UPDATE ... SET ... WHERE query
  */
 function translateUpdate(ast, ctx) {
-  const tableItem = ast.table ? ast.table[0] : null;
-  if (!tableItem) throw new Error('UPDATE statement missing target table.');
+  const tableNode = ast.table;
+  const rawTable = Array.isArray(tableNode) ? tableNode[0].table : (tableNode.table || tableNode);
+  const entityName = resolveEntityName(rawTable);
 
-  const entityName = resolveEntityName(tableItem.table);
   if (!entityName || !ENTITIES[entityName]) {
-    throw new Error(`Cannot update unknown table "${tableItem.table}".`);
+    throw new TranslationError(`Cannot update unknown table "${rawTable}".`);
   }
 
   const entity = ENTITIES[entityName];
   const alias = entity.defaultAlias;
-  ctx.registerTable(tableItem.table, alias);
-
-  if (!ast.where) {
-    throw new Error('UPDATE without WHERE clause is blocked for safety. Please provide a specific WHERE condition.');
-  }
+  ctx.registerTable(rawTable, alias);
 
   const setList = ast.set || [];
-  if (setList.length === 0) {
-    throw new Error('UPDATE statement has no SET assignments.');
+  if (!Array.isArray(setList) || setList.length === 0) {
+    throw new TranslationError('UPDATE statement missing SET assignments.');
   }
 
-  const setClauses = setList.map(s => {
-    const prop = resolvePropertyName(entityName, s.column);
-    const val = extractLiteralValue(s.value);
-    const pKey = ctx.addParam(val);
-    return `${alias}.${prop} = ${pKey}`;
-  });
+  const setAssignments = [];
+  for (const item of setList) {
+    const rawCol = item.column;
+    const propName = resolvePropertyName(entityName, rawCol);
+    let valStr = '';
 
-  const whereCondition = translateWhereExpr(ast.where, ctx);
-  const cypher = `MATCH (${alias}:${entity.label})\nWHERE ${whereCondition}\nSET ${setClauses.join(', ')}\nRETURN ${alias}`;
+    if (item.value.type === 'column_ref') {
+      valStr = ctx.resolveColumn(item.value);
+    } else {
+      const val = extractLiteralValue(item.value);
+      valStr = ctx.addParam(val);
+    }
+
+    setAssignments.push(`${alias}.${propName} = ${valStr}`);
+  }
+
+  let cypher = `MATCH (${alias}:${entity.label})`;
+
+  if (ast.where) {
+    const whereCondition = translateWhereExpr(ast.where, ctx);
+    cypher += `\nWHERE ${whereCondition}`;
+  }
+
+  cypher += `\nSET ${setAssignments.join(', ')}\nRETURN ${alias}`;
 
   return {
     cypher,
@@ -572,15 +619,18 @@ function translateUpdate(ast, ctx) {
 }
 
 /**
- * Translates a DELETE query
+ * Translates a DELETE FROM ... WHERE query
  */
 function translateDelete(ast, ctx) {
-  const fromItem = ast.from ? ast.from[0] : null;
-  if (!fromItem) throw new Error('DELETE statement missing target table.');
+  const fromList = ast.from;
+  if (!fromList || !Array.isArray(fromList) || fromList.length === 0) {
+    throw new TranslationError('DELETE statement missing FROM table.');
+  }
 
+  const fromItem = fromList[0];
   const entityName = resolveEntityName(fromItem.table);
   if (!entityName || !ENTITIES[entityName]) {
-    throw new Error(`Cannot delete from unknown table "${fromItem.table}".`);
+    throw new TranslationError(`Cannot delete from unknown table "${fromItem.table}".`);
   }
 
   const entity = ENTITIES[entityName];
@@ -588,7 +638,7 @@ function translateDelete(ast, ctx) {
   ctx.registerTable(fromItem.table, alias);
 
   if (!ast.where) {
-    throw new Error('DELETE without WHERE clause is blocked for safety. Please provide a specific WHERE condition (e.g. WHERE studentId = \'...\').');
+    throw new UnsupportedSqlFeatureError('DELETE without WHERE clause is blocked for safety. Please provide a specific WHERE condition (e.g. WHERE studentId = \'...\').');
   }
 
   const whereCondition = translateWhereExpr(ast.where, ctx);
@@ -621,7 +671,7 @@ function normalizeCypherQuery(rawCypher) {
  */
 function translateSqlToCypher(rawSql) {
   if (!rawSql || typeof rawSql !== 'string' || !rawSql.trim()) {
-    throw new Error('SQL query cannot be empty.');
+    throw new TranslationError('SQL query cannot be empty.');
   }
 
   const trimmed = rawSql.trim().replace(/;+\s*$/, '');
@@ -641,12 +691,12 @@ function translateSqlToCypher(rawSql) {
   try {
     ast = parser.astify(trimmed, PARSER_OPT);
   } catch (parseErr) {
-    throw new Error(`SQL Syntax Error: ${parseErr.message || 'Unable to parse SQL query.'}`);
+    throw new SqlParsingError(`SQL Syntax Error: ${parseErr.message || 'Unable to parse SQL query.'}`);
   }
 
   const rootAst = Array.isArray(ast) ? ast[0] : ast;
   if (!rootAst || !rootAst.type) {
-    throw new Error('Unsupported or malformed SQL statement.');
+    throw new SqlParsingError('Unsupported or malformed SQL statement.');
   }
 
   const ctx = new TranslationContext();
@@ -664,13 +714,16 @@ function translateSqlToCypher(rawSql) {
     case 'create':
     case 'alter':
     case 'drop':
-      throw new Error(`Schema operation (${statementType.toUpperCase()}) is not supported in interactive SQL Studio. Node constraints and schema are managed via database/schema.cypher.`);
+      throw new UnsupportedSqlFeatureError(`Schema operation (${statementType.toUpperCase()}) is not supported in interactive SQL Studio. Node constraints and schema are managed via database/schema.cypher.`);
     default:
-      throw new Error(`SQL statement type "${statementType.toUpperCase()}" is not supported. Supported: SELECT, INSERT, UPDATE, DELETE.`);
+      throw new UnsupportedSqlFeatureError(`SQL statement type "${statementType.toUpperCase()}" is not supported. Supported: SELECT, INSERT, UPDATE, DELETE.`);
   }
 }
 
 module.exports = {
   translateSqlToCypher,
-  normalizeCypherQuery
+  normalizeCypherQuery,
+  SqlParsingError,
+  UnsupportedSqlFeatureError,
+  TranslationError
 };

@@ -1,0 +1,13 @@
+{
+  "name": "hostel-management-neo4j-root",
+  "version": "1.0.0",
+  "description": "Hostel Management System with Neo4j AuraDB backend and React frontend",
+  "scripts": {
+    "start": "cd backend && node server.js",
+    "build": "cd backend && npm install",
+    "install:backend": "cd backend && npm install",
+    "install:frontend": "cd frontend && npm install",
+    "test-sql": "cd backend && npm run test-sql",
+    "test-api": "cd backend && npm run test-api"
+  }
+}

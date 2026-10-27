@@ -510,7 +510,16 @@ export default function SqlQueryPage({ showToast }) {
     } catch (err) {
       console.error('SQL Studio Execution Error:', err);
       const msg = err.data?.message || err.data?.error || err.message || 'Execution failed';
-      setErrorInfo({ message: msg });
+      const errorType = err.data?.errorType || 'EXECUTION_ERROR';
+      const originalQuery = err.data?.originalQuery || err.data?.sql || trimmed;
+      const generatedCypher = err.data?.generatedCypher || err.data?.cypher || null;
+      setErrorInfo({
+        message: msg,
+        errorType,
+        originalQuery,
+        generatedCypher,
+        status: 'FAILED'
+      });
       if (showToast) showToast(`Query Error: ${msg}`, 'error');
     } finally {
       setExecuting(false);
@@ -1129,10 +1138,93 @@ export default function SqlQueryPage({ showToast }) {
 
           {/* Results Content Body */}
           {errorInfo ? (
-            <div style={{ padding: '16px 20px', background: 'rgba(239, 68, 68, 0.04)' }}>
-              <div style={{ color: '#fca5a5', fontFamily: 'var(--font-mono)', fontSize: '0.84rem', lineHeight: 1.5 }}>
+            <div style={{ padding: '18px 22px', background: 'rgba(239, 68, 68, 0.04)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#f87171',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    fontFamily: 'var(--font-mono)'
+                  }}
+                >
+                  {errorInfo.errorType ? errorInfo.errorType.replace(/_/g, ' ') : 'EXECUTION ERROR'}
+                </span>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                  Execution status: <strong style={{ color: '#ef4444' }}>FAILED</strong>
+                </span>
+              </div>
+
+              {/* Error Message */}
+              <div
+                style={{
+                  color: '#fca5a5',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.84rem',
+                  lineHeight: 1.55,
+                  padding: '10px 14px',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  marginBottom: 14
+                }}
+              >
                 {errorInfo.message}
               </div>
+
+              {/* Original SQL */}
+              {errorInfo.originalQuery && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4 }}>
+                    ORIGINAL SQL:
+                  </div>
+                  <pre
+                    style={{
+                      margin: 0,
+                      padding: '8px 12px',
+                      background: '#070b14',
+                      borderRadius: '4px',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.78rem',
+                      color: '#e2e8f0',
+                      whiteSpace: 'pre-wrap'
+                    }}
+                  >
+                    {errorInfo.originalQuery}
+                  </pre>
+                </div>
+              )}
+
+              {/* Generated Cypher (if translation succeeded before execution error) */}
+              {errorInfo.generatedCypher && (
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4 }}>
+                    GENERATED CYPHER (TRANSLATION SUCCEEDED):
+                  </div>
+                  <pre
+                    style={{
+                      margin: 0,
+                      padding: '8px 12px',
+                      background: '#070b14',
+                      borderRadius: '4px',
+                      border: '1px solid rgba(56, 189, 248, 0.25)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.78rem',
+                      color: '#38bdf8',
+                      whiteSpace: 'pre-wrap'
+                    }}
+                  >
+                    {errorInfo.generatedCypher}
+                  </pre>
+                </div>
+              )}
             </div>
           ) : isSelectResult ? (
             <div className="data-table-wrapper" style={{ maxHeight: '55vh', overflowY: 'auto' }}>
