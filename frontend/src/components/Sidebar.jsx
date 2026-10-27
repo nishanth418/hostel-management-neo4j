@@ -28,8 +28,7 @@ export const NAVIGATION_SECTIONS = [
   {
     title: 'OVERVIEW',
     items: [
-      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { id: 'sql-query', label: 'SQL Studio', icon: Terminal }
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }
     ]
   },
   {
@@ -73,7 +72,8 @@ export const NAVIGATION_SECTIONS = [
   {
     title: 'DATABASE',
     items: [
-      { id: 'table_STUDENT', label: 'Database Studio', icon: Database, matchPrefix: 'table_' }
+      { id: 'table_STUDENT', label: 'Database Studio', icon: Database, matchPrefix: 'table_' },
+      { id: 'sql-query', label: 'Cypher Studio', icon: Terminal }
     ]
   },
   {
